@@ -8,7 +8,9 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Servant.HTML.EDE.Internal.Templates
   ( Tpl
-  , Templates
+  , HTML
+  , Templates(..)
+  , templateMap
   , TemplateFiles
   , TemplateError
   , Errors
@@ -23,11 +25,12 @@ import Data.Proxy
 import Data.Semigroup
 import Data.Text.Lazy.Encoding (encodeUtf8)
 import GHC.TypeLits
+import Network.HTTP.Media hiding (Accept)
 import Network.HTTP.Types
 import Network.Wai
+import Servant
 import Servant.HTML.EDE.Internal.Reify
 import Servant.HTML.EDE.Internal.Validate
-import Servant
 import Servant.Server.Internal
 import System.FilePath
 import Text.EDE
@@ -58,7 +61,7 @@ data Tpl (tplfile :: Symbol)
 instance KnownSymbol tplfile => HasServer (Tpl tplfile) where
   type ServerT (Tpl tplfile) m = Templates
 
-  route Proxy (Templates templateMap) request respond
+  route Proxy (Templates tMap) request respond
     | pathIsEmpty request && requestMethod request == methodGet =
         case mbody of
           Success body -> respond . succeedWith $
@@ -70,7 +73,22 @@ instance KnownSymbol tplfile => HasServer (Tpl tplfile) where
     | otherwise = respond (failWith NotFound)
 
     where filename = symbolVal (Proxy :: Proxy tplfile)
-          mbody = render (templateMap HM.! filename) mempty
+          mbody = render (tMap HM.! filename) mempty
+
+-- | 'HTML' content type, but more than just that.
+--
+--   'HTML' takes a type-level string which is
+--   a filename for the template you want to use to
+--   render values.
+--
+--   /WARNING/: relies on a global template store and
+--   on initializing this store with 'loadTemplates_'
+--   for now.
+data HTML (tplfile :: Symbol)
+
+-- | @text\/html;charset=utf-8@
+instance Accept (HTML tplfile) where
+  contentType _ = "text" // "html" /: ("charset", "utf-8")
 
 type family Append (xs :: [k]) (ys :: [k]) :: [k] where
   Append '[]       ys = ys
@@ -84,11 +102,23 @@ type family Member (x :: k) (xs :: [k]) :: Bool where
 -- | Collect all the template filenames of an API as a type-level
 --   list of strings, by simply looking at all occurences of the
 --   'Tpl' combinator and keeping the filename associated to it.
-type family TemplateFiles (api :: k) :: [Symbol] where
-  TemplateFiles (a :<|> b) = Append (TemplateFiles a) (TemplateFiles b)
-  TemplateFiles (a :> r)   = TemplateFiles r
-  TemplateFiles (Tpl f)    = '[f]
-  TemplateFiles a          = '[]
+type family TemplateFiles (api :: k) :: [Symbol]
+type instance TemplateFiles (a :<|> b)    = Append (TemplateFiles a) (TemplateFiles b)
+type instance TemplateFiles (a :> r)      = TemplateFiles r
+type instance TemplateFiles (Tpl f)       = '[f]
+type instance TemplateFiles (Delete cs a) = CTFiles cs
+type instance TemplateFiles (Get cs a)    = CTFiles cs
+type instance TemplateFiles (Patch cs a)  = CTFiles cs
+type instance TemplateFiles (Post cs a)   = CTFiles cs
+type instance TemplateFiles (Put cs a)    = CTFiles cs
+
+type family CTFiles (cts :: [*]) :: [Symbol] where
+  CTFiles '[]        = '[]
+  CTFiles (c ': cts) = Append (CTFile c) (CTFiles cts)
+
+type family CTFile c :: [Symbol] where
+  CTFile (HTML fp) = '[fp]
+  CTFile         a = '[]
 
 templates :: Proxy api -> Proxy (TemplateFiles api)
 templates Proxy = Proxy
@@ -106,6 +136,9 @@ templateFiles = reify . templates
 -- guaranteed to find it.
 newtype Templates = Templates (HashMap String Template)
   deriving Eq
+
+templateMap :: Templates -> HashMap String Template
+templateMap (Templates m) = m
 
 instance Semigroup Templates where
   Templates a <> Templates b = Templates (a <> b)

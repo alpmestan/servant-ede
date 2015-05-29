@@ -22,13 +22,16 @@ library
       Servant.HTML.EDE.Internal
     , Servant.HTML.EDE.Internal.Reify
     , Servant.HTML.EDE.Internal.Templates
+    , Servant.HTML.EDE.Internal.ToObject
     , Servant.HTML.EDE.Internal.Validate
   -- other-extensions:    
   build-depends:
-      base >=4.7 && <5
+      aeson >= 0.8
+    , base >=4.7 && <5
     , bytestring
     , filepath
     , ede
+    , http-media
     , http-types
     , semigroups
     , servant
@@ -49,6 +52,7 @@ executable servant-ede-example
   default-language: Haskell2010
   build-depends:
       base >= 4.7 && <5
+    , ede
     , servant-server
     , servant-ede
     , warp
