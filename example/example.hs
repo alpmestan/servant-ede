@@ -18,5 +18,5 @@ main :: IO ()
 main = do
   tpls <- loadTemplates api "example"
   case tpls of
-    NotOK es -> forM_ es print
-    OK    ts -> run 8082 (serve api $ server ts)
+    Left es  -> forM_ es print
+    Right ts -> run 8082 (serve api $ server ts)
