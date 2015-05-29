@@ -82,7 +82,7 @@ loadTemplates_ proxy dir = do
   res <- loadTemplates proxy dir
   case res of
     Left errs  -> return errs
-    Right tpls@(Templates ts) -> do
+    Right tpls -> do
       liftIO $ putMVar __template_store tpls
       return []
 

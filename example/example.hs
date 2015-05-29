@@ -1,19 +1,18 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE OverloadedStrings #-}
 import Control.Monad
+import GHC.Generics
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.HTML.EDE
 import Text.EDE
 
-data User = User String Int
-  deriving (Eq, Show)
+data User = User { name :: String, age :: Int }
+  deriving (Eq, Show, Generic)
 
 instance ToObject User where
-	toObject (User name age) = fromPairs [ "name" .= name
-                                       , "age"  .= age
-                                       ]
 
 type DummyAPI = "index" :> Tpl "index.tpl"
            :<|> "foo" :> Tpl "foo.tpl"
