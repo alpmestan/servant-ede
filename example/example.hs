@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE OverloadedStrings #-}
 import Control.Monad
+import Data.Monoid
 import GHC.Generics
 import Network.Wai.Handler.Warp
 import Servant
@@ -14,30 +15,19 @@ data User = User { name :: String, age :: Int }
 
 instance ToObject User where
 
-type DummyAPI = "index" :> Tpl "index.tpl"
-           :<|> "foo" :> Tpl "foo.tpl"
-
-dummyAPI :: Proxy DummyAPI
-dummyAPI = Proxy
-
-type UserAPI = "user" :> Get '[HTML "user.tpl"] User
-
-userAPI :: Proxy UserAPI
-userAPI = Proxy
-
-type API = UserAPI :<|> DummyAPI
+type API = "index" :> Tpl "index.tpl"
+      :<|> "foo"   :> Tpl "foo.tpl"
+      :<|> "user"  :> Get '[HTML "user.tpl"] User
 
 api :: Proxy API
 api = Proxy
 
-server :: Templates -> Server API
-server ts = return (User "lambdabot" 35) :<|> ts :<|> ts
+server :: Server API
+server = rawTemplate :<|> rawTemplate :<|> return (User "lambdabot" 35)
+
+  where rawTemplate = return mempty
 
 main :: IO ()
 main = do
-  res <- loadTemplates dummyAPI "example"
-  case res of
-    Left errs -> forM_ errs print
-    Right tmap -> do
-      loadTemplates_ userAPI "example"
-      run 8082 (serve api $ server tmap)
+  loadTemplates api "example"
+  run 8082 (serve api server)

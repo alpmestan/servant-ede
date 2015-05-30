@@ -3,14 +3,17 @@
 
 name:                servant-ede
 version:             0.4
--- synopsis:            
--- description:         
+synopsis:            Combinators for rendering EDE templates in servant web applications
+description:
+  Combinators for rendering EDE templates in servant web applications.
+  .
+  Documentation and examples available at "Servant.HTML.EDE".
 homepage:            http://github.com/alpmestan/servant-ede
 license:             BSD3
 license-file:        LICENSE
 author:              Alp Mestanogullari
 maintainer:          alpmestan@gmail.com
--- copyright:           
+copyright:           2015 Alp Mestanogullari
 category:            Web
 build-type:          Simple
 extra-source-files:  README.md
@@ -24,22 +27,23 @@ library
     , Servant.HTML.EDE.Internal.Templates
     , Servant.HTML.EDE.Internal.ToObject
     , Servant.HTML.EDE.Internal.Validate
-  -- other-extensions:    
+
   build-depends:
       aeson >= 0.8
     , base >=4.7 && <5
-    , bytestring
-    , filepath
-    , ede
-    , http-media
-    , http-types
-    , semigroups
-    , servant
-    , servant-server
-    , text
-    , transformers
-    , unordered-containers
-    , wai
+    , bytestring >= 0.10
+    , filepath >= 1.2
+    , ede >= 0.2
+    , either >= 4
+    , http-media >= 0.6
+    , http-types >= 0.8
+    , semigroups >= 0.16
+    , servant >= 0.4
+    , servant-server >= 0.4
+    , text >= 1.0
+    , transformers >= 0.4
+    , unordered-containers >= 0.2
+    , wai >= 3.0
 
   ghc-options:         -O2 -Wall
   hs-source-dirs:      src
@@ -55,4 +59,4 @@ executable servant-ede-example
     , ede
     , servant-server
     , servant-ede
-    , warp
+    , warp >= 3.0

@@ -3,14 +3,17 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Servant.HTML.EDE.Internal.Templates
   ( Tpl
   , HTML
   , Templates(..)
   , templateMap
+  , __template_store
   , TemplateFiles
   , TemplateError
   , Errors
@@ -18,7 +21,10 @@ module Servant.HTML.EDE.Internal.Templates
   , templateFiles
   ) where
 
+import Control.Concurrent.MVar
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Either
+import Data.Aeson (Object)
 import Data.ByteString.Lazy.Char8 (pack)
 import Data.HashMap.Strict
 import Data.Proxy
@@ -30,12 +36,18 @@ import Network.HTTP.Types
 import Network.Wai
 import Servant
 import Servant.HTML.EDE.Internal.Reify
+import Servant.HTML.EDE.Internal.ToObject
 import Servant.HTML.EDE.Internal.Validate
 import Servant.Server.Internal
+import Servant.Server.Internal.ServantErr
 import System.FilePath
+import System.IO.Unsafe (unsafePerformIO)
 import Text.EDE
 
 import qualified Data.HashMap.Strict as HM
+
+__template_store :: MVar Templates
+__template_store = unsafePerformIO newEmptyMVar
 
 -- | Combinator for serving EDE templates without arguments. Usage:
 --
@@ -46,49 +58,91 @@ import qualified Data.HashMap.Strict as HM
 -- > api = Proxy
 -- >
 -- > server :: Templates -> Server API
--- > server tpls = tpls :<|> tpls
+-- > server tpls = return mempty :<|> return mempty
 -- >
 -- > main :: IO ()
 -- > main = do
--- >   tpls <- loadTemplates api "./templates"
--- >   run 8080 (serve api $ server tpls)
+-- >   loadTemplates_ api "./templates"
+-- >   run 8080 (serve api server)
 data Tpl (tplfile :: Symbol)
+
 
 -- | The so-called "request handler" for an endpoint ending
 --   with 'Tpl' just has to be the opaque 'Templates' value
 --   returned by 'Servant.HTML.EDE.loadTemplates' applied to your API, which
 --   is just a compiled template store indexed by file name.
 instance KnownSymbol tplfile => HasServer (Tpl tplfile) where
-  type ServerT (Tpl tplfile) m = Templates
+  type ServerT (Tpl tplfile) m = m Object
 
-  route Proxy (Templates tMap) request respond
-    | pathIsEmpty request && requestMethod request == methodGet =
-        case mbody of
-          Success body -> respond . succeedWith $
-            responseLBS ok200 [("Content-Type", "text/html")] (encodeUtf8 body)
-          Failure doc  -> respond . succeedWith $
-            responseLBS status500 [] ("template error: " <> pack (show doc))
+  route Proxy mobj request respond
+    | pathIsEmpty request && requestMethod request == methodGet = do
+        tpls <- getTemplates
+        val <- runEitherT mobj
+        case val of
+          Left e -> respond . succeedWith $ responseServantErr e
+          Right v  -> 
+            case mbody tpls v of
+              Success body -> respond . succeedWith $
+                responseLBS ok200 [("Content-Type", "text/html")] (encodeUtf8 body)
+              Failure doc  -> respond . succeedWith $
+                responseLBS status500 [] ("template error: " <> pack (show doc))
+
     | pathIsEmpty request && requestMethod request /= methodGet =
         respond (failWith WrongMethod)
+
     | otherwise = respond (failWith NotFound)
 
     where filename = symbolVal (Proxy :: Proxy tplfile)
-          mbody = render (tMap HM.! filename) mempty
+          mbody ts val = render (ts HM.! filename) val
+          getTemplates = fmap templateMap (readMVar __template_store)
 
 -- | 'HTML' content type, but more than just that.
 --
 --   'HTML' takes a type-level string which is
 --   a filename for the template you want to use to
---   render values.
+--   render values. Example:
 --
---   /WARNING/: relies on a global template store and
---   on initializing this store with 'loadTemplates_'
---   for now.
+-- @
+-- type UserAPI = "user" :> Get '[JSON, HTML "user.tpl"] User
+--
+-- userAPI :: Proxy UserAPI
+-- userAPI = Proxy
+--
+-- data User = User { name :: String, age :: Int } deriving Generic
+--
+-- instance ToJSON User
+-- instance ToObject User
+--
+-- server :: Server API
+-- server = return (User "lambdabot" 31)
+--
+-- main :: IO ()
+-- main = do
+--   loadTemplates userAPI "./templates"
+--   run 8082 (serve userAPI server)
+-- @
+--
+-- This will look for a template at @.\/templates\/user.tpl@, which could
+-- for example be:
+--
+-- > <ul>
+-- >   <li><strong>Name:</strong> {{ name }}</li>
+-- >   <li><strong>Age:</strong> {{ age }}</li>
+-- > </ul>
 data HTML (tplfile :: Symbol)
 
 -- | @text\/html;charset=utf-8@
 instance Accept (HTML tplfile) where
   contentType _ = "text" // "html" /: ("charset", "utf-8")
+
+instance (KnownSymbol tplfile, ToObject a)
+      => MimeRender (HTML tplfile) a where
+  mimeRender _ val = encodeUtf8 . result (error . show) id $
+    render templ (toObject val)
+
+    where templ = tmap ! filename
+          filename = symbolVal (Proxy :: Proxy tplfile)
+          tmap = templateMap $ unsafePerformIO (readMVar __template_store)
 
 type family Append (xs :: [k]) (ys :: [k]) :: [k] where
   Append '[]       ys = ys
@@ -101,7 +155,7 @@ type family Member (x :: k) (xs :: [k]) :: Bool where
 
 -- | Collect all the template filenames of an API as a type-level
 --   list of strings, by simply looking at all occurences of the
---   'Tpl' combinator and keeping the filename associated to it.
+--   'Tpl' and 'HTML' combinators and keeping the filenames associated to them.
 type family TemplateFiles (api :: k) :: [Symbol]
 type instance TemplateFiles (a :<|> b)    = Append (TemplateFiles a) (TemplateFiles b)
 type instance TemplateFiles (a :> r)      = TemplateFiles r
