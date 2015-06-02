@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                servant-ede
-version:             0.4
+version:             0.4.0.1
 synopsis:            Combinators for rendering EDE templates in servant web applications
 description:
   Combinators for rendering EDE templates in servant web applications.

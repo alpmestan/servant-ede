@@ -165,6 +165,7 @@ type instance TemplateFiles (Get cs a)    = CTFiles cs
 type instance TemplateFiles (Patch cs a)  = CTFiles cs
 type instance TemplateFiles (Post cs a)   = CTFiles cs
 type instance TemplateFiles (Put cs a)    = CTFiles cs
+type instance TemplateFiles Raw           = '[]
 
 type family CTFiles (cts :: [*]) :: [Symbol] where
   CTFiles '[]        = '[]
