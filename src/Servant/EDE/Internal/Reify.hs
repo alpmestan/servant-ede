@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Servant.HTML.EDE.Internal.Reify (Reify(..)) where
+module Servant.EDE.Internal.Reify (Reify(..)) where
 
 import Data.Proxy
 import GHC.TypeLits

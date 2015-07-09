@@ -7,25 +7,20 @@ import Data.Monoid
 import GHC.Generics
 import Network.Wai.Handler.Warp
 import Servant
-import Servant.HTML.EDE
-import Text.EDE
+import Servant.EDE
 
 data User = User { name :: String, age :: Int }
   deriving (Eq, Show, Generic)
 
 instance ToObject User where
 
-type API = "index" :> Tpl "index.tpl"
-      :<|> "foo"   :> Tpl "foo.tpl"
-      :<|> "user"  :> Get '[HTML "user.tpl"] User
+type API = "user" :> Get '[HTML "user.tpl"] User
 
 api :: Proxy API
 api = Proxy
 
 server :: Server API
-server = rawTemplate :<|> rawTemplate :<|> return (User "lambdabot" 35)
-
-  where rawTemplate = return mempty
+server = return (User "lambdabot" 35)
 
 main :: IO ()
 main = do

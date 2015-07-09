@@ -3,7 +3,7 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleInstances #-}
 -- {-# LANGUAGE OverloadedStrings #-}
-module Servant.HTML.EDE.Internal.ToObject where
+module Servant.EDE.Internal.ToObject where
 
 import Data.Aeson
 import Data.HashMap.Strict
@@ -77,21 +77,3 @@ instance (Selector s, ToJSON a) => GToObject (M1 S s (K1 r a)) where
 
 genericToObject :: (Generic a, GToObject (Rep a)) => a -> Object
 genericToObject = gtoObject . from
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

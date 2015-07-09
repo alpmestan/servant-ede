@@ -1,4 +1,4 @@
-module Servant.HTML.EDE.Internal.Validate where
+module Servant.EDE.Internal.Validate where
 
 import Control.Applicative
 import Data.Foldable
