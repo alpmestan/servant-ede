@@ -20,13 +20,13 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Servant.HTML.EDE
+  exposed-modules:     Servant.EDE, Servant.EDE.HTML
   other-modules:
-      Servant.HTML.EDE.Internal
-    , Servant.HTML.EDE.Internal.Reify
-    , Servant.HTML.EDE.Internal.Templates
-    , Servant.HTML.EDE.Internal.ToObject
-    , Servant.HTML.EDE.Internal.Validate
+      Servant.EDE.Internal
+    , Servant.EDE.Internal.Reify
+    , Servant.EDE.Internal.Templates
+    , Servant.EDE.Internal.ToObject
+    , Servant.EDE.Internal.Validate
 
   build-depends:
       aeson >= 0.8
