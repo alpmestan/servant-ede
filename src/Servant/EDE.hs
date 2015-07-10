@@ -181,7 +181,6 @@ __template_store = unsafePerformIO newEmptyMVar
 --
 -- data User = User { name :: String, age :: Int } deriving Generic
 --
--- instance ToJSON User
 -- instance ToObject User
 --
 -- server :: Server API

@@ -7,7 +7,7 @@ synopsis:            Combinators for rendering EDE templates in servant web appl
 description:
   Combinators for rendering EDE templates in servant web applications.
   .
-  Documentation and examples available at "Servant.HTML.EDE".
+  Documentation and examples available at "Servant.EDE".
 homepage:            http://github.com/alpmestan/servant-ede
 license:             BSD3
 license-file:        LICENSE
@@ -20,9 +20,9 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Servant.EDE
-  other-modules:
-      Servant.EDE.Internal
+  exposed-modules:
+      Servant.EDE
+    , Servant.EDE.Internal
     , Servant.EDE.Internal.Reify
     , Servant.EDE.Internal.ToObject
     , Servant.EDE.Internal.Validate
