@@ -9,10 +9,15 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Servant.EDE
-  ( loadTemplates
-  , ToObject(..)
-  , HTML
+  ( -- * Combinators
+    HTML
   , Tpl
+
+    -- * Sending Haskell data to templates
+  , ToObject(..)
+
+  , -- * Loading template files (mandatory)
+    loadTemplates
   , TemplateFiles
   , Reify
   , Templates
@@ -48,7 +53,18 @@ import qualified Data.Vector         as V
 --   successfully. If that's not the case, the global template store
 --   (under an 'MVar') is left empty.
 --
---   /IMPORTANT/: Must /always/ be called before starting your /servant/ application.
+--   /IMPORTANT/: Must /always/ be called before starting your /servant/ application. Example:
+--
+-- > type API = Get '[HTML "home.tpl"] HomeData
+-- >
+-- > api :: Proxy API
+-- > api = Proxy
+-- >
+-- > main :: IO ()
+-- > main = loadTemplates api "path/to/templates" >>= print
+--
+-- This would try to load @home.tpl@, printing any error or
+-- registering the compiled template if successfully compiled.
 loadTemplates :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
               => Proxy api
               -> FilePath -- ^ root directory for the templates
@@ -72,10 +88,70 @@ loadTemplates' proxy templatedir =
   where files :: [FilePath]
         files = templateFiles proxy
 
+-- | A generic template combinator, parametrized over
+--   the content-type (or MIME) associated to the template.
+--
+--   The first parameter is the content-type you want to send along with
+--   rendered templates (must be an instance of 'Accept').
+--
+--   The second parameter is the name of (or path to) the template file.
+--   It must live under the 'FilePath' argument of 'loadTemplates'.
+--
+--   Here is how you could render and serve, say, /CSS/
+--   (Cascading Style Sheets) templates that make use
+--   of some @CSSData@ data type to tweak the styling.
+--
+-- @
+-- data CSS
+--
+-- instance Accept CSS where
+--   contentType _ = "text" // "css"
+--
+-- type StyleAPI = "style.css" :> Get '[Tpl CSS "style.tpl"] CSSData
+--
+-- styleAPI :: Proxy StyleAPI
+-- styleAPI = Proxy
+--
+-- data CSSData = CSSData
+--   { darken :: Bool
+--   , pageWidth :: Int
+--   } deriving Generic
+--
+-- instance ToObject CSSData
+--
+-- server :: Server API
+-- server = -- produce a CSSData value depending on whatever is relevant...
+--
+-- main :: IO ()
+-- main = do
+--   loadTemplates styleAPI "./templates"
+--   run 8082 (serve styleAPI server)
+-- @
+--
+-- This will look for a template at @.\/templates\/style.tpl@,
+-- which could for example be:
+--
+-- > body {
+-- >   {% if darken %}
+-- >   background-color: #222222;
+-- >   color: blue;
+-- >   {% else %}
+-- >   background-color: white;
+-- >   color: back;
+-- >   {% endif %}
+-- > }
+-- >
+-- > #content {
+-- >   width: {{ pageWidth }};
+-- >   margin: 0 auto;
+-- > }
+--
+-- A complete, runnable version of this can be found
+-- in the @examples@ folder of the git repository.
 data Tpl (ct :: *) (file :: Symbol)
 
 -- the filename doesn't matter for the content type,
--- as long as 'ct' is a valid one (html, json, css, application-specific, whatever really)
+-- as long as 'ct' is a valid one (html, json, css, etc or application-specific)
 instance Accept ct => Accept (Tpl ct file) where
   contentType _ = contentType ctproxy
     where ctproxy = Proxy :: Proxy ct
@@ -129,9 +205,11 @@ __template_store = unsafePerformIO newEmptyMVar
 -- passed to the template.
 data HTML (file :: Symbol)
 
+-- | @text/html;charset=utf-8@
 instance Accept (HTML file) where
   contentType _ = "text" // "html" /: ("charset", "utf-8")
 
+-- | XSS-sanitizes data before rendering it
 instance (KnownSymbol file, ToObject a) => MimeRender (HTML file) a where
   mimeRender _ val = mimeRender (Proxy :: Proxy (Tpl (HTML file) file)) $
     sanitizeObject (toObject val)

@@ -20,6 +20,7 @@ import GHC.Generics
 -- > import Text.EDE
 -- >
 -- > data User = User { name :: String, age :: Int }
+-- >
 -- > instance ToObject User where
 -- >   toObject user =
 -- >     fromPairs [ "name" .= name user

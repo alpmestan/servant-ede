@@ -58,6 +58,7 @@ executable servant-ede-example
   build-depends:
       base >= 4.7 && <5
     , ede
+    , http-media
     , servant-server
     , servant-ede
     , warp >= 3.0
