@@ -28,6 +28,7 @@ module Servant.EDE
 
 #if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+import Data.Traversable (traverse)
 #endif
 
 import Control.Concurrent
