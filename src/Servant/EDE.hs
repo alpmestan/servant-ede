@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -25,17 +26,22 @@ module Servant.EDE
   , TemplateError
   ) where
 
+#if __GLASGOW_HASKELL__ < 710
+import Control.Applicative
+#endif
+
 import Control.Concurrent
 import Control.Monad.IO.Class
 import Data.Aeson (Object, Value(..))
 import Data.Foldable (fold)
 import Data.HashMap.Strict (HashMap, (!))
+import Data.Proxy
 import Data.Semigroup
 import Data.Text (Text)
 import Data.Text.Lazy.Encoding (encodeUtf8)
 import GHC.TypeLits
 import Network.HTTP.Media hiding (Accept)
-import Servant
+import Servant.API
 import Servant.EDE.Internal.Reify
 import Servant.EDE.Internal.ToObject
 import Servant.EDE.Internal.Validate
