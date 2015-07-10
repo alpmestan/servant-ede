@@ -1,8 +1,12 @@
-module Servant.HTML.EDE.Internal.Validate where
+{-# LANGUAGE CPP #-}
+module Servant.EDE.Internal.Validate where
 
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
+#endif
+
 import Data.Functor.Compose
 import Data.Semigroup
 
