@@ -9,6 +9,26 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Servant.EDE
+-- Copyright   :  (c) Alp Mestanogullari 2015
+-- Maintainer  :  alpmestan@gmail.com
+-- Stability   :  experimental
+--
+-- Rendering EDE templates with servant.
+--
+-- This package provides two combinators to be used as content-types
+-- with servant (i.e just like 'JSON'), 'HTML' and 'Tpl'.
+--
+-- - 'HTML' takes a filename as parameter and lets you render the template
+--   with that name against the data returned by a request handler using
+--   the @text\/html;charset=utf-8@ MIME type, XSS-sanitizing the said data
+--   along the way. See 'HTML' for an example.
+-- - 'Tpl' does the same except that it's parametrized over the content type
+--   to be sent along with the rendered template. Any type that has an 'Accept'
+--   instance will do. See 'Tpl' for an example.
+-----------------------------------------------------------------------------
 module Servant.EDE
   ( -- * Combinators
     HTML
@@ -71,7 +91,8 @@ import qualified Data.Vector         as V
 -- > main = loadTemplates api "path/to/templates" >>= print
 --
 -- This would try to load @home.tpl@, printing any error or
--- registering the compiled template if successfully compiled.
+-- registering the compiled template in a global (but safe)
+-- compiled template store, if successfully compiled.
 loadTemplates :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
               => Proxy api
               -> FilePath -- ^ root directory for the templates
@@ -103,6 +124,10 @@ loadTemplates' proxy templatedir =
 --
 --   The second parameter is the name of (or path to) the template file.
 --   It must live under the 'FilePath' argument of 'loadTemplates'.
+--
+--   Any type used with this content-type (like @CSSData@ below)
+--   must have an instance of the 'ToObject' class. The field names
+--   become the variable names in the template world.
 --
 --   Here is how you could render and serve, say, /CSS/
 --   (Cascading Style Sheets) templates that make use
@@ -178,7 +203,11 @@ __template_store = unsafePerformIO newEmptyMVar
 --
 --   'HTML' takes a type-level string which is
 --   a filename for the template you want to use to
---   render values. Example:
+--   render values. Just like 'Tpl', types used with
+--   the 'HTML' content type (like @User@ below)
+--   must provide a 'ToObject' instance.
+--
+--   Example:
 --
 -- @
 -- type UserAPI = "user" :> Get '[JSON, HTML "user.tpl"] User
