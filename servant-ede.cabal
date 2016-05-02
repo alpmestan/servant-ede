@@ -29,21 +29,21 @@ library
     , Servant.EDE.Internal.Validate
 
   build-depends:
-      aeson >= 0.8 && <0.10
-    , base >=4.7 && <5
-    , bytestring >= 0.10 && <0.11
-    , filepath >= 1.2 && <1.5
-    , ede >= 0.2 && <0.3
-    , either >= 4.0 && <4.5
-    , http-media >= 0.6 && <0.7
-    , http-types >= 0.8 && <0.9
-    , semigroups >= 0.16 && <0.17
-    , servant >= 0.4 && <0.6
-    , text >= 1.0 && <1.3
-    , transformers >= 0.4 && <0.5
-    , unordered-containers >= 0.2 && <0.3
-    , vector >= 0.9 && <0.11
-    , xss-sanitize >= 0.3 && <0.4
+      aeson
+    , base
+    , bytestring
+    , filepath
+    , ede
+    , either
+    , http-media
+    , http-types
+    , semigroups
+    , servant
+    , text
+    , transformers
+    , unordered-containers
+    , vector
+    , xss-sanitize
 
   ghc-options:         -O2 -Wall
   hs-source-dirs:      src
@@ -55,9 +55,9 @@ executable servant-ede-example
   hs-source-dirs: example
   default-language: Haskell2010
   build-depends:
-      base >= 4.7 && <5
+      base
     , ede
     , http-media
     , servant-server
     , servant-ede
-    , warp >= 3.0
+    , warp
