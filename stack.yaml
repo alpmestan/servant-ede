@@ -7,13 +7,6 @@ resolver: lts-5.13
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
-- location:
-    git: https://github.com/haskell-servant/servant
-    commit: 718ca10589dfeed52bd12de98dfa0542e4b9c775
-  subdirs:
-    - servant-client
-    - servant-server
-    - servant
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps: []
