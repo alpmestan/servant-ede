@@ -193,11 +193,14 @@ instance Accept ct => Accept (Tpl ct file) where
 
 instance (KnownSymbol file, Accept ct, ToObject a) => MimeRender (Tpl ct file) a where
   mimeRender _ val = encodeUtf8 . result (error . show) id $
-    render templ (toObject val)
+    renderWith flts templ (toObject val)
 
     where templ = tmap ! filename
           filename = symbolVal (Proxy :: Proxy file)
-          tmap = templateMap $ unsafePerformIO (readMVar __template_store)
+          tmplfs = unsafePerformIO (readMVar __template_store)
+          tmap = templateMap $ _templates tmplfs
+          flts = _filters tmplfs
+
 
 __template_store :: MVar TemplatesAndFilters
 __template_store = unsafePerformIO newEmptyMVar
