@@ -196,7 +196,7 @@ instance (KnownSymbol file, Accept ct, ToObject a) => MimeRender (Tpl ct file) a
           filename = symbolVal (Proxy :: Proxy file)
           tmap = templateMap $ unsafePerformIO (readMVar __template_store)
 
-__template_store :: MVar Templates
+__template_store :: MVar TemplatesAndFilters
 __template_store = unsafePerformIO newEmptyMVar
 
 -- | 'HTML' content type, but more than just that.
@@ -319,6 +319,13 @@ instance Monoid Templates where
   mempty = Templates mempty
 
   a `mappend` b = a <> b
+
+-- A data type that holds both the compiled templates and
+-- any passed-in custom filters
+data TemplatesAndFilters = TemplatesAndFilters {
+                                  _templates :: Templates
+                                , _filters   :: HashMap Text Term
+                                }
 
 tpl :: FilePath -> Template -> Templates
 tpl fp t = Templates $ HM.singleton fp t
