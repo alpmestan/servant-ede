@@ -55,7 +55,7 @@ import Control.Concurrent
 import Control.Monad.IO.Class
 import Data.Aeson (Object, Value(..))
 import Data.Foldable (fold)
-import Data.HashMap.Strict (HashMap, (!))
+import Data.HashMap.Strict (HashMap, (!),fromList)
 import Data.Proxy
 import Data.Semigroup
 import Data.Text (Text)
@@ -69,6 +69,7 @@ import Servant.EDE.Internal.Validate
 import System.FilePath
 import System.IO.Unsafe
 import Text.EDE
+import Text.EDE.Filters (Term)
 import Text.HTML.SanitizeXSS
 
 import qualified Data.HashMap.Strict as HM
@@ -100,6 +101,7 @@ loadTemplates :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
               -> FilePath  -- ^ root directory for the templates
               -> m Errors
 loadTemplates proxy fpairs dir = do
+  let flts = fromList fpairs
   res <- loadTemplates' proxy dir
   case res of
     Left errs  -> return errs

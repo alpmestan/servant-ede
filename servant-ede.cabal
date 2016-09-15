@@ -60,4 +60,6 @@ executable servant-ede-example
     , http-media
     , servant-server
     , servant-ede
+    , text
+    , unordered-containers
     , warp
