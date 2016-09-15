@@ -9,6 +9,9 @@ import Network.HTTP.Media ((//))
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.EDE
+import Text.EDE.Filters ((@:),Term)
+import qualified Data.HashMap.Strict as Map
+import Data.Text (Text, chunksOf)
 
 -- * Using 'Tpl' for rendering CSS templates
 
@@ -47,9 +50,12 @@ type API = StyleAPI :<|> UserAPI
 api :: Proxy API
 api = Proxy
 
+filters :: [(Text,Term)]
+filters = ["toChars" @: (chunksOf 1)]
+
 main :: IO ()
 main = do
-  loadTemplates api "example"
+  loadTemplates api filters "example"
   run 8082 (serve api $ styleServer :<|> userServer)
 
 -- You can now head to:
