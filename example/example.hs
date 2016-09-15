@@ -65,6 +65,21 @@ main = do
 -- to see 'HTML' and 'Tpl' + 'CSS' in action,
 -- respectively.
 --
+-- Example output:
+--
+-- curl -i -H 'Accept: text/html' http://localhost:8082/user
+-- HTTP/1.1 200 OK
+-- Transfer-Encoding: chunked
+-- Date: Thu, 15 Sep 2016 19:41:25 GMT
+-- Server: Warp/3.2.8
+-- Content-Type: text/html;charset=utf-8
+--
+-- <ul>
+-- <li><strong>Name</strong>: lambdabot</li>
+-- <li><strong>Age</strong>: 35</li>
+-- <li><strong>Chunked Name</strong>: ["l","a","m","b","d","a","b","o","t"]</li>
+-- </ul>
+--
 -- Feel free to tweak the content of the template files
 -- as well as the 'User' and 'CSSData' values in this program
 -- to see how it affects the rendering.
