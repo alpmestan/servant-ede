@@ -93,16 +93,19 @@ import qualified Data.Vector         as V
 -- This would try to load @home.tpl@, printing any error or
 -- registering the compiled template in a global (but safe)
 -- compiled template store, if successfully compiled.
+type Filters = (Text,Term)
 loadTemplates :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
               => Proxy api
-              -> FilePath -- ^ root directory for the templates
+              -> [Filters] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
+              -> FilePath  -- ^ root directory for the templates
               -> m Errors
-loadTemplates proxy dir = do
+loadTemplates proxy fpairs dir = do
   res <- loadTemplates' proxy dir
   case res of
     Left errs  -> return errs
     Right tpls -> do
-      liftIO $ putMVar __template_store tpls
+      let tplfs = TemplatesAndFilters tpls flts
+      liftIO $ putMVar __template_store tplfs
       return []
 
 loadTemplates' :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
