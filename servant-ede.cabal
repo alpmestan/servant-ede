@@ -1,5 +1,5 @@
 name:                servant-ede
-version:             0.5.1
+version:             0.6
 synopsis:            Combinators for rendering EDE templates in servant web applications
 description:
   Combinators for rendering EDE templates in servant web applications.
@@ -11,7 +11,7 @@ license:             BSD3
 license-file:        LICENSE
 author:              Alp Mestanogullari
 maintainer:          alpmestan@gmail.com
-copyright:           2015 Alp Mestanogullari
+copyright:           2015-2016 Alp Mestanogullari
 category:            Web
 build-type:          Simple
 extra-source-files:  README.md
@@ -30,7 +30,7 @@ library
 
   build-depends:
       aeson
-    , base
+    , base >=4.7 && <5
     , bytestring
     , filepath
     , ede
@@ -45,7 +45,7 @@ library
     , vector
     , xss-sanitize
 
-  ghc-options:         -O2 -Wall
+  ghc-options:         -Wall
   hs-source-dirs:      src
   default-language:    Haskell2010
 
