@@ -55,7 +55,7 @@ import Control.Concurrent
 import Control.Monad.IO.Class
 import Data.Aeson (Object, Value(..))
 import Data.Foldable (fold)
-import Data.HashMap.Strict (HashMap, (!))
+import Data.HashMap.Strict (HashMap, (!),fromList)
 import Data.Proxy
 import Data.Semigroup
 import Data.Text (Text)
@@ -69,11 +69,13 @@ import Servant.EDE.Internal.Validate
 import System.FilePath
 import System.IO.Unsafe
 import Text.EDE
+import Text.EDE.Filters (Term)
 import Text.HTML.SanitizeXSS
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector         as V
 
+type Filter = (Text,Term)
 -- | This function initializes a global
 --   template store (i.e a 'Templates' value) and fills it with
 --   the resulting compiled templates if all of them are compiled
@@ -95,14 +97,17 @@ import qualified Data.Vector         as V
 -- compiled template store, if successfully compiled.
 loadTemplates :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
               => Proxy api
+              -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
               -> FilePath -- ^ root directory for the templates
               -> m Errors
-loadTemplates proxy dir = do
+loadTemplates proxy fpairs dir = do
+  let flts = fromList fpairs
   res <- loadTemplates' proxy dir
   case res of
     Left errs  -> return errs
     Right tpls -> do
-      liftIO $ putMVar __template_store tpls
+      let tplfs = TemplatesAndFilters tpls flts
+      liftIO $ putMVar __template_store tplfs
       return []
 
 loadTemplates' :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
@@ -190,13 +195,16 @@ instance Accept ct => Accept (Tpl ct file) where
 
 instance (KnownSymbol file, Accept ct, ToObject a) => MimeRender (Tpl ct file) a where
   mimeRender _ val = encodeUtf8 . result (error . show) id $
-    render templ (toObject val)
+    renderWith flts templ (toObject val)
 
     where templ = tmap ! filename
           filename = symbolVal (Proxy :: Proxy file)
-          tmap = templateMap $ unsafePerformIO (readMVar __template_store)
+          tmplfs = unsafePerformIO (readMVar __template_store)
+          tmap = templateMap $ _templates tmplfs
+          flts = _filters tmplfs
 
-__template_store :: MVar Templates
+
+__template_store :: MVar TemplatesAndFilters
 __template_store = unsafePerformIO newEmptyMVar
 
 -- | 'HTML' content type, but more than just that.
@@ -319,6 +327,13 @@ instance Monoid Templates where
   mempty = Templates mempty
 
   a `mappend` b = a <> b
+
+-- A data type that holds both the compiled templates and
+-- any passed-in custom filters
+data TemplatesAndFilters = TemplatesAndFilters {
+                                  _templates :: Templates
+                                , _filters   :: HashMap Text Term
+                                }
 
 tpl :: FilePath -> Template -> Templates
 tpl fp t = Templates $ HM.singleton fp t

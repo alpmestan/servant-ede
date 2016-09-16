@@ -9,6 +9,9 @@ import Network.HTTP.Media ((//))
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.EDE
+import Text.EDE.Filters ((@:),Term)
+import qualified Data.HashMap.Strict as Map
+import Data.Text (Text, chunksOf)
 
 -- * Using 'Tpl' for rendering CSS templates
 
@@ -47,9 +50,12 @@ type API = StyleAPI :<|> UserAPI
 api :: Proxy API
 api = Proxy
 
+filters :: [(Text,Term)]
+filters = ["toChars" @: (chunksOf 1)]
+
 main :: IO ()
 main = do
-  loadTemplates api "example"
+  loadTemplates api filters "example"
   run 8082 (serve api $ styleServer :<|> userServer)
 
 -- You can now head to:
@@ -58,6 +64,21 @@ main = do
 -- http://localhost:8082/style.css
 -- to see 'HTML' and 'Tpl' + 'CSS' in action,
 -- respectively.
+--
+-- Example output:
+--
+-- curl -i -H 'Accept: text/html' http://localhost:8082/user
+-- HTTP/1.1 200 OK
+-- Transfer-Encoding: chunked
+-- Date: Thu, 15 Sep 2016 19:41:25 GMT
+-- Server: Warp/3.2.8
+-- Content-Type: text/html;charset=utf-8
+--
+-- <ul>
+-- <li><strong>Name</strong>: lambdabot</li>
+-- <li><strong>Age</strong>: 35</li>
+-- <li><strong>Chunked Name</strong>: ["l","a","m","b","d","a","b","o","t"]</li>
+-- </ul>
 --
 -- Feel free to tweak the content of the template files
 -- as well as the 'User' and 'CSSData' values in this program
