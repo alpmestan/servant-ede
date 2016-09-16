@@ -75,6 +75,7 @@ import Text.HTML.SanitizeXSS
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector         as V
 
+type Filter = (Text,Term)
 -- | This function initializes a global
 --   template store (i.e a 'Templates' value) and fills it with
 --   the resulting compiled templates if all of them are compiled
@@ -94,11 +95,10 @@ import qualified Data.Vector         as V
 -- This would try to load @home.tpl@, printing any error or
 -- registering the compiled template in a global (but safe)
 -- compiled template store, if successfully compiled.
-type Filters = (Text,Term)
 loadTemplates :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
               => Proxy api
-              -> [Filters] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
-              -> FilePath  -- ^ root directory for the templates
+              -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
+              -> FilePath -- ^ root directory for the templates
               -> m Errors
 loadTemplates proxy fpairs dir = do
   let flts = fromList fpairs
