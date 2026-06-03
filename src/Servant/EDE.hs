@@ -110,7 +110,9 @@ loadTemplates proxy fpairs dir = do
     Left errs  -> return errs
     Right tpls -> do
       let tplfs = TemplatesAndFilters tpls flts
-      liftIO $ putMVar __template_store tplfs
+      liftIO $ do
+        tryTakeMVar __template_store
+        tryPutMVar __template_store tplfs
       return []
 
 loadTemplates' :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
@@ -207,10 +209,11 @@ instance (KnownSymbol file, Accept ct, ToObject a) => MimeRender (Tpl ct file) a
           flts = _filters tmplfs
           mkObject = fromList . map (first Key.toText) . KeyMap.toList . toObject
 
-          
+
 
 __template_store :: MVar TemplatesAndFilters
 __template_store = unsafePerformIO newEmptyMVar
+{-# NOINLINE __template_store #-}
 
 -- | 'HTML' content type, but more than just that.
 --
