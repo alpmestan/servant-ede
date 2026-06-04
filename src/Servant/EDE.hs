@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications         #-}
@@ -54,6 +55,7 @@ import Control.Applicative
 import Data.Traversable (traverse)
 #endif
 
+import GHC.Base (withDict)
 import Control.Monad (void)
 import Control.Concurrent
 import Control.Monad.IO.Class
@@ -80,6 +82,9 @@ import Text.HTML.SanitizeXSS
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector         as V
 
+class LoadedTemplates where
+  loadedTemplates :: TemplatesAndFilters
+
 type Filter = (Text,Term)
 -- | This function initializes a global
 --   template store (i.e a 'Templates' value) and fills it with
@@ -104,18 +109,15 @@ loadTemplates :: (TemplateFiles api, Applicative m, MonadIO m)
               => Proxy api
               -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
               -> FilePath -- ^ root directory for the templates
-              -> m Errors
-loadTemplates proxy fpairs dir = do
+              -> (LoadedTemplates => m r)
+              -> m (Either Errors r)
+loadTemplates proxy fpairs dir k = do
   let flts = fromList fpairs
   res <- loadTemplates' proxy dir
   case res of
-    Left errs  -> return errs
+    Left errs  -> pure $ Left errs
     Right tpls -> do
-      let tplfs = TemplatesAndFilters tpls flts
-      void $ liftIO $ do
-        void $ tryTakeMVar __template_store
-        void $ tryPutMVar __template_store tplfs
-      return []
+      fmap Right $ withDict @LoadedTemplates (TemplatesAndFilters tpls flts) k
 
 loadTemplates' :: (TemplateFiles api, Applicative m, MonadIO m)
                => Proxy api
@@ -203,19 +205,13 @@ instance Accept ct => Accept (Tpl ct) where
 class HasTemplate ct a where
   templateFor :: Proxy ct -> Proxy a -> FilePath
 
-instance (HasTemplate ct a, Accept ct, ToObject a) => MimeRender (Tpl ct) a where
-  mimeRender _ val = unsafePerformIO $ do
-    tmplfs <- readMVar __template_store
-    let tmap = templateMap $ _templates tmplfs
-        flts = _filters tmplfs
+instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRender (Tpl ct) a where
+  mimeRender _ val =
+    let tmap = templateMap $ _templates loadedTemplates
+        flts = _filters loadedTemplates
         mkObject = fromList . map (first Key.toText) . KeyMap.toList . toObject
-    pure $ encodeUtf8 . result (error . show) id $
-      renderWith flts (tmap ! templateFor (Proxy @ct) (Proxy @a)) (mkObject val)
-
-
-__template_store :: MVar TemplatesAndFilters
-__template_store = unsafePerformIO newEmptyMVar
-{-# NOINLINE __template_store #-}
+     in encodeUtf8 . result (error . show) id $
+          renderWith flts (tmap ! templateFor (Proxy @ct) (Proxy @a)) (mkObject val)
 
 -- | 'HTML' content type, but more than just that.
 --
@@ -263,14 +259,13 @@ instance Accept HTML where
   contentType _ = "text" // "html" /: ("charset", "utf-8")
 
 -- | XSS-sanitizes data before rendering it
-instance (HasTemplate HTML a, ToObject a) => MimeRender HTML a where
-  mimeRender _ val = unsafePerformIO $ do
-    tmplfs <- readMVar __template_store
-    let tmap = templateMap $ _templates tmplfs
-        flts = _filters tmplfs
+instance (LoadedTemplates, HasTemplate HTML a, ToObject a) => MimeRender HTML a where
+  mimeRender _ val =
+    let tmap = templateMap $ _templates loadedTemplates
+        flts = _filters loadedTemplates
         mkObject = fromList . map (first Key.toText) . KeyMap.toList . sanitizeObject . toObject
-    pure $ encodeUtf8 . result (error . show) id $
-      renderWith flts (tmap ! templateFor (Proxy @HTML) (Proxy @a)) (mkObject val)
+     in encodeUtf8 . result (error . show) id $
+          renderWith flts (tmap ! templateFor (Proxy @HTML) (Proxy @a)) (mkObject val)
 
 sanitizeObject :: Object -> Object
 sanitizeObject = KeyMap.fromList . map sanitizeKV . KeyMap.toList

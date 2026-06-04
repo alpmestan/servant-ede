@@ -63,8 +63,10 @@ filters = ["toChars" @: (chunksOf 1)]
 
 main :: IO ()
 main = do
-  loadTemplates api filters "example"
-  run 8082 (serve api $ styleServer :<|> userServer)
+  void $
+    loadTemplates api filters "example" $
+      run 8082 (serve api $ styleServer :<|> userServer)
+
 
 -- You can now head to:
 -- http://localhost:8082/user
