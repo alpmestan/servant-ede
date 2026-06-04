@@ -1,7 +1,9 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TypeOperators         #-}
+
 import Control.Monad
 import Data.Monoid
 import GHC.Generics
@@ -20,7 +22,10 @@ data CSS
 instance Accept CSS where
   contentType _ = "text" // "css"
 
-type StyleAPI = "style.css" :> Get '[Tpl CSS "style.tpl"] CSSData
+type StyleAPI = "style.css" :> Get '[Tpl CSS] CSSData
+
+instance HasTemplate CSS CSSData where
+  templateFor _ _ = "style.tpl"
 
 data CSSData = CSSData
   { darken :: Bool
@@ -40,7 +45,10 @@ data User = User { name :: String, age :: Int }
 
 instance ToObject User where
 
-type UserAPI = "user" :> Get '[HTML "user.tpl"] User
+instance HasTemplate HTML User where
+  templateFor _ _ = "user.tpl"
+
+type UserAPI = "user" :> Get '[HTML] User
 
 userServer :: Server UserAPI
 userServer = return (User "lambdabot" 35)

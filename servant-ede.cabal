@@ -24,7 +24,6 @@ library
   exposed-modules:
       Servant.EDE
     , Servant.EDE.Internal
-    , Servant.EDE.Internal.Reify
     , Servant.EDE.Internal.ToObject
     , Servant.EDE.Internal.Validate
 

@@ -1,14 +1,17 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
+
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Servant.EDE
@@ -39,8 +42,8 @@ module Servant.EDE
 
   , -- * Loading template files (mandatory)
     loadTemplates
-  , TemplateFiles
-  , Reify
+  , TemplateFiles(..)
+  , HasTemplate(..)
   , Templates
   , Errors
   , TemplateError
@@ -51,6 +54,7 @@ import Control.Applicative
 import Data.Traversable (traverse)
 #endif
 
+import Control.Monad (void)
 import Control.Concurrent
 import Control.Monad.IO.Class
 import qualified Data.Aeson.KeyMap as KeyMap
@@ -63,10 +67,8 @@ import Data.HashMap.Strict (HashMap, (!),fromList)
 import Data.Proxy
 import Data.Text (Text)
 import Data.Text.Lazy.Encoding (encodeUtf8)
-import GHC.TypeLits
 import Network.HTTP.Media hiding (Accept)
 import Servant.API
-import Servant.EDE.Internal.Reify
 import Servant.EDE.Internal.ToObject
 import Servant.EDE.Internal.Validate
 import System.FilePath
@@ -98,7 +100,7 @@ type Filter = (Text,Term)
 -- This would try to load @home.tpl@, printing any error or
 -- registering the compiled template in a global (but safe)
 -- compiled template store, if successfully compiled.
-loadTemplates :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
+loadTemplates :: (TemplateFiles api, Applicative m, MonadIO m)
               => Proxy api
               -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
               -> FilePath -- ^ root directory for the templates
@@ -110,12 +112,12 @@ loadTemplates proxy fpairs dir = do
     Left errs  -> return errs
     Right tpls -> do
       let tplfs = TemplatesAndFilters tpls flts
-      liftIO $ do
-        tryTakeMVar __template_store
-        tryPutMVar __template_store tplfs
+      void $ liftIO $ do
+        void $ tryTakeMVar __template_store
+        void $ tryPutMVar __template_store tplfs
       return []
 
-loadTemplates' :: (Reify (TemplateFiles api), Applicative m, MonadIO m)
+loadTemplates' :: (TemplateFiles api, Applicative m, MonadIO m)
                => Proxy api
                -> FilePath   -- ^ root directory for the templates
                -> m (Either Errors Templates)
@@ -190,25 +192,25 @@ loadTemplates' proxy templatedir =
 --
 -- A complete, runnable version of this can be found
 -- in the @examples@ folder of the git repository.
-data Tpl (ct :: Type) (file :: Symbol)
+data Tpl (ct :: Type)
 
 -- the filename doesn't matter for the content type,
 -- as long as 'ct' is a valid one (html, json, css, etc or application-specific)
-instance Accept ct => Accept (Tpl ct file) where
+instance Accept ct => Accept (Tpl ct) where
   contentType _ = contentType ctproxy
     where ctproxy = Proxy :: Proxy ct
 
-instance (KnownSymbol file, Accept ct, ToObject a) => MimeRender (Tpl ct file) a where
-  mimeRender _ val = encodeUtf8 . result (error . show) id $
-    renderWith flts templ (mkObject val)
+class HasTemplate ct a where
+  templateFor :: Proxy ct -> Proxy a -> FilePath
 
-    where templ = tmap ! filename
-          filename = symbolVal (Proxy :: Proxy file)
-          tmplfs = unsafePerformIO (readMVar __template_store)
-          tmap = templateMap $ _templates tmplfs
-          flts = _filters tmplfs
-          mkObject = fromList . map (first Key.toText) . KeyMap.toList . toObject
-
+instance (HasTemplate ct a, Accept ct, ToObject a) => MimeRender (Tpl ct) a where
+  mimeRender _ val = unsafePerformIO $ do
+    tmplfs <- readMVar __template_store
+    let tmap = templateMap $ _templates tmplfs
+        flts = _filters tmplfs
+        mkObject = fromList . map (first Key.toText) . KeyMap.toList . toObject
+    pure $ encodeUtf8 . result (error . show) id $
+      renderWith flts (tmap ! templateFor (Proxy @ct) (Proxy @a)) (mkObject val)
 
 
 __template_store :: MVar TemplatesAndFilters
@@ -254,16 +256,21 @@ __template_store = unsafePerformIO newEmptyMVar
 --
 -- /IMPORTANT/: it XSS-sanitizes every bit of text in the 'Object'
 -- passed to the template.
-data HTML (file :: Symbol)
+data HTML
 
 -- | @text/html;charset=utf-8@
-instance Accept (HTML file) where
+instance Accept HTML where
   contentType _ = "text" // "html" /: ("charset", "utf-8")
 
 -- | XSS-sanitizes data before rendering it
-instance (KnownSymbol file, ToObject a) => MimeRender (HTML file) a where
-  mimeRender _ val = mimeRender (Proxy :: Proxy (Tpl (HTML file) file)) $
-    sanitizeObject (toObject val)
+instance (HasTemplate HTML a, ToObject a) => MimeRender HTML a where
+  mimeRender _ val = unsafePerformIO $ do
+    tmplfs <- readMVar __template_store
+    let tmap = templateMap $ _templates tmplfs
+        flts = _filters tmplfs
+        mkObject = fromList . map (first Key.toText) . KeyMap.toList . sanitizeObject . toObject
+    pure $ encodeUtf8 . result (error . show) id $
+      renderWith flts (tmap ! templateFor (Proxy @HTML) (Proxy @a)) (mkObject val)
 
 sanitizeObject :: Object -> Object
 sanitizeObject = KeyMap.fromList . map sanitizeKV . KeyMap.toList
@@ -286,33 +293,41 @@ type family Member (x :: k) (xs :: [k]) :: Bool where
   Member x (y ': xs) = Member x xs
   Member x       '[] = 'False
 
--- | Collect all the template filenames of an API as a type-level
---   list of strings, by simply looking at all occurences of the
---   'Tpl' and 'HTML' combinators and keeping the filenames associated to them.
-type family TemplateFiles (api :: k) :: [Symbol]
-type instance TemplateFiles (a :<|> b)    = Append (TemplateFiles a) (TemplateFiles b)
-type instance TemplateFiles (a :> r)      = TemplateFiles r
-type instance TemplateFiles (Delete cs a) = CTFiles cs
-type instance TemplateFiles (Get cs a)    = CTFiles cs
-type instance TemplateFiles (Patch cs a)  = CTFiles cs
-type instance TemplateFiles (Post cs a)   = CTFiles cs
-type instance TemplateFiles (Put cs a)    = CTFiles cs
-type instance TemplateFiles Raw           = '[]
+-- -- | Collect all the template filenames of an API as a type-level
+-- --   list of strings, by simply looking at all occurences of the
+-- --   'Tpl' and 'HTML' combinators and keeping the filenames associated to them.
 
-type family CTFiles (cts :: [Type]) :: [Symbol] where
-  CTFiles '[]        = '[]
-  CTFiles (c ': cts) = Append (CTFile c) (CTFiles cts)
+type TemplateFiles :: k -> Constraint
+class TemplateFiles api where
+  templateFiles :: Proxy api -> [FilePath]
 
-type family CTFile c :: [Symbol] where
-  CTFile (HTML fp)   = '[fp]
-  CTFile (Tpl ct fp) = '[fp]
-  CTFile a           = '[]
+instance (TemplateFiles a, TemplateFiles b) => TemplateFiles (a :<|> b) where
+  templateFiles _ = templateFiles (Proxy @a) <> templateFiles (Proxy @b)
 
-templates :: Proxy api -> Proxy (TemplateFiles api)
-templates Proxy = Proxy
+instance (TemplateFiles api) => TemplateFiles (a :> api) where
+  templateFiles _ = templateFiles $ Proxy @api
 
-templateFiles :: Reify (TemplateFiles api) => Proxy api -> [FilePath]
-templateFiles = reify . templates
+instance ContentTemplateFiles c a => TemplateFiles (Verb m s c a) where
+  templateFiles _ = contentTemplatesFor (Proxy @c) (Proxy @a)
+
+instance TemplateFiles Raw where
+  templateFiles _ = mempty
+
+type ContentTemplateFiles :: [Type] -> Type -> Constraint
+class ContentTemplateFiles c a where
+  contentTemplatesFor :: Proxy c -> Proxy a -> [FilePath]
+
+instance ContentTemplateFiles '[] a where
+  contentTemplatesFor _ _ = mempty
+
+instance {-# OVERLAPPING #-} (HasTemplate HTML a, ContentTemplateFiles cs a) => ContentTemplateFiles (HTML ': cs) a where
+  contentTemplatesFor _ pa = templateFor (Proxy @HTML) pa : contentTemplatesFor (Proxy @cs) pa
+
+instance {-# OVERLAPPING #-} (HasTemplate c a, ContentTemplateFiles cs a) => ContentTemplateFiles (Tpl c ': cs) a where
+  contentTemplatesFor _ pa = templateFor (Proxy @c) pa : contentTemplatesFor (Proxy @cs) pa
+
+instance {-# OVERLAPPABLE #-} (ContentTemplateFiles cs a) => ContentTemplateFiles (c ': cs) a where
+  contentTemplatesFor _ pa = contentTemplatesFor (Proxy @cs) pa
 
 -- | An opaque "compiled-template store".
 --
