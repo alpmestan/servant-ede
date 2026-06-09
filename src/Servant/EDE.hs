@@ -11,7 +11,6 @@
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
-{-# LANGUAGE UndecidableInstances     #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -25,10 +24,11 @@
 -- This package provides two combinators to be used as content-types
 -- with servant (i.e just like 'JSON'), 'HTML' and 'Tpl'.
 --
--- - 'HTML' takes a filename as parameter and lets you render the template
---   with that name against the data returned by a request handler using
---   the @text\/html;charset=utf-8@ MIME type, XSS-sanitizing the said data
---   along the way. See 'HTML' for an example.
+-- - 'HTML' lets you render the template with that name against the data
+--   returned by a request handler using the @text\/html;charset=utf-8@ MIME
+--   type, XSS-sanitizing the said data along the way. See 'HTML' for an
+--   example.
+--
 -- - 'Tpl' does the same except that it's parametrized over the content type
 --   to be sent along with the rendered template. Any type that has an 'Accept'
 --   instance will do. See 'Tpl' for an example.
@@ -56,8 +56,6 @@ import Data.Traversable (traverse)
 #endif
 
 import GHC.Base (withDict)
-import Control.Monad (void)
-import Control.Concurrent
 import Control.Monad.IO.Class
 import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Aeson.Key as Key
@@ -74,7 +72,6 @@ import Servant.API
 import Servant.EDE.Internal.ToObject
 import Servant.EDE.Internal.Validate
 import System.FilePath
-import System.IO.Unsafe
 import Text.EDE
 import Text.EDE.Filters (Term)
 import Text.HTML.SanitizeXSS
@@ -82,29 +79,33 @@ import Text.HTML.SanitizeXSS
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector         as V
 
+-- | Special class for safely passing IO-loaded templates into type-level
+-- combinators. Instances of 'LoadedTemplates' are only provided by
+-- 'loadTemplates'.
 class LoadedTemplates where
   loadedTemplates :: TemplatesAndFilters
 
 type Filter = (Text,Term)
--- | This function initializes a global
---   template store (i.e a 'Templates' value) and fills it with
---   the resulting compiled templates if all of them are compiled
---   successfully. If that's not the case, the global template store
---   (under an 'MVar') is left empty.
+-- | This function initializes a global template store (i.e a 'Templates' value)
+-- and fills it with the resulting compiled templates if all of them are
+-- compiled successfully. If that's not the case, this function returns the
+-- errors.
 --
---   /IMPORTANT/: Must /always/ be called before starting your /servant/ application. Example:
+-- Example:
 --
--- > type API = Get '[HTML "home.tpl"] HomeData
+-- > instance HasTemplate HTML HomeData where
+-- >   templateFor _ _ = "home.tpl"
+-- >
+-- > type API = Get '[HTML] HomeData
 -- >
 -- > api :: Proxy API
 -- > api = Proxy
 -- >
 -- > main :: IO ()
--- > main = loadTemplates api "path/to/templates" >>= print
+-- > main = either print pure $ loadTemplates api "path/to/templates" $ ...
 --
--- This would try to load @home.tpl@, printing any error or
--- registering the compiled template in a global (but safe)
--- compiled template store, if successfully compiled.
+-- This would try to load @home.tpl@, printing any errors or performing the
+-- actions given by @...@.
 loadTemplates :: (TemplateFiles api, Applicative m, MonadIO m)
               => Proxy api
               -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
@@ -153,7 +154,7 @@ loadTemplates' proxy templatedir =
 -- instance Accept CSS where
 --   contentType _ = "text" // "css"
 --
--- type StyleAPI = "style.css" :> Get '[Tpl CSS "style.tpl"] CSSData
+-- type StyleAPI = "style.css" :> Get '[Tpl CSS] CSSData
 --
 -- styleAPI :: Proxy StyleAPI
 -- styleAPI = Proxy
@@ -163,6 +164,9 @@ loadTemplates' proxy templatedir =
 --   , pageWidth :: Int
 --   } deriving Generic
 --
+-- instance HasTEmplate CSSData where
+--   templateFor _ _ = "style.tpl"
+--
 -- instance ToObject CSSData
 --
 -- server :: Server API
@@ -170,8 +174,7 @@ loadTemplates' proxy templatedir =
 --
 -- main :: IO ()
 -- main = do
---   loadTemplates styleAPI "./templates"
---   run 8082 (serve styleAPI server)
+--   loadTemplates styleAPI "./templates" $ run 8082 (serve styleAPI server)
 -- @
 --
 -- This will look for a template at @.\/templates\/style.tpl@,
@@ -196,8 +199,6 @@ loadTemplates' proxy templatedir =
 -- in the @examples@ folder of the git repository.
 data Tpl (ct :: Type)
 
--- the filename doesn't matter for the content type,
--- as long as 'ct' is a valid one (html, json, css, etc or application-specific)
 instance Accept ct => Accept (Tpl ct) where
   contentType _ = contentType ctproxy
     where ctproxy = Proxy :: Proxy ct
@@ -215,16 +216,17 @@ instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRende
 
 -- | 'HTML' content type, but more than just that.
 --
---   'HTML' takes a type-level string which is
---   a filename for the template you want to use to
---   render values. Just like 'Tpl', types used with
---   the 'HTML' content type (like @User@ below)
---   must provide a 'ToObject' instance.
+--   Just like 'Tpl', types used with the 'HTML' content type (like @User@
+--   below) must provide 'ToObject' and 'HasTemplate' instances. Unlike 'Tpl',
+--   this type performs automatic escaping of HTML values to prevent XSS.
 --
 --   Example:
 --
 -- @
--- type UserAPI = "user" :> Get '[JSON, HTML "user.tpl"] User
+-- type UserAPI = "user" :> Get '[JSON, HTML] User
+--
+-- instance HasTemplate HTML User where
+--   templateFor _ _ = "user.tpl"
 --
 -- userAPI :: Proxy UserAPI
 -- userAPI = Proxy
@@ -237,9 +239,7 @@ instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRende
 -- server = return (User "lambdabot" 31)
 --
 -- main :: IO ()
--- main = do
---   loadTemplates userAPI "./templates"
---   run 8082 (serve userAPI server)
+-- main = either print pure $ loadTemplates userAPI "./templates" $ run 8082 (serve userAPI server)
 -- @
 --
 -- This will look for a template at @.\/templates\/user.tpl@, which could
@@ -278,15 +278,6 @@ sanitizeValue (String s) = String (sanitize s)
 sanitizeValue (Array a) = Array (V.map sanitizeValue a)
 sanitizeValue (Object o) = Object (sanitizeObject o)
 sanitizeValue x = x
-
-type family Append (xs :: [k]) (ys :: [k]) :: [k] where
-  Append '[]       ys = ys
-  Append (x ': xs) ys = x ': Append xs ys
-
-type family Member (x :: k) (xs :: [k]) :: Bool where
-  Member x (x ': xs) = 'True
-  Member x (y ': xs) = Member x xs
-  Member x       '[] = 'False
 
 -- -- | Collect all the template filenames of an API as a type-level
 -- --   list of strings, by simply looking at all occurences of the
