@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -43,6 +44,7 @@ module Servant.EDE
 
   , -- * Loading template files (mandatory)
     loadTemplates
+  , LoadedTemplates
   , TemplateFiles(..)
   , HasTemplate(..)
   , Templates
@@ -298,6 +300,10 @@ instance ContentTemplateFiles c a => TemplateFiles (Verb m s c a) where
 
 instance TemplateFiles Raw where
   templateFiles _ = mempty
+
+instance TemplateFiles (ToServantApi a) => TemplateFiles (NamedRoutes a) where
+  templateFiles _ = templateFiles (Proxy @(ToServantApi a))
+
 
 type ContentTemplateFiles :: [Type] -> Type -> Constraint
 class ContentTemplateFiles c a where
