@@ -6,8 +6,9 @@
 module Servant.EDE.Internal.ToObject where
 
 import Data.Aeson
-import Data.HashMap.Strict
-import Data.Monoid
+import qualified Data.Aeson.KeyMap as KeyMap
+import qualified Data.Aeson.Key as Key
+import qualified Data.HashMap.Strict as HashMap
 import Data.Text
 import GHC.Generics
 
@@ -42,14 +43,17 @@ class ToObject a where
   --
   -- @ 
   -- -- Reminder:
-  -- type Object = 'HashMap' 'Text' 'Value'
+  -- type Object = 'KeyMap' 'Value'
   -- @
   toObject :: a -> Object
   
   default toObject :: (Generic a, GToObject (Rep a)) => a -> Object
   toObject = genericToObject
 
-instance ToObject (HashMap Text Value) where
+instance ToObject (HashMap.HashMap Text Value) where
+  toObject hm = KeyMap.fromList [(Key.fromText k, v) | (k,v) <- HashMap.toList hm]
+
+instance ToObject (KeyMap.KeyMap Value) where
   toObject = id
 
 class GToObject f where
@@ -72,8 +76,8 @@ instance GToObject a => GToObject (M1 C c a) where
   gtoObject (M1 x) = gtoObject x
 
 instance (Selector s, ToJSON a) => GToObject (M1 S s (K1 r a)) where
-  gtoObject s@(M1 (K1 x)) = fromList [(fieldname, value)]
-    where fieldname = pack (selName s)
+  gtoObject s@(M1 (K1 x)) = KeyMap.fromList [(fieldname, value)]
+    where fieldname = Key.fromText (pack (selName s))
           value     = toJSON x
 
 genericToObject :: (Generic a, GToObject (Rep a)) => a -> Object

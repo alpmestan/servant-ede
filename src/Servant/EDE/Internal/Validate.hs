@@ -8,7 +8,6 @@ import Data.Traversable
 #endif
 
 import Data.Functor.Compose
-import Data.Semigroup
 
 data Validated e a = OK a | NotOK e
   deriving (Eq, Show)
