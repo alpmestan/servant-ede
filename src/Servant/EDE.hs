@@ -10,6 +10,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneKindSignatures   #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -57,9 +58,10 @@ module Servant.EDE
 import Control.Applicative
 #endif
 
+import qualified Data.HashSet as S
+import Data.HashSet (HashSet)
 import Data.Traversable (for)
 import GHC.Base (withDict)
-import Control.Monad.IO.Class
 import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Aeson.Key as Key
 import Data.Aeson (Object, Value(..))
@@ -90,6 +92,7 @@ class LoadedTemplates where
   loadedTemplates :: TemplatesAndFilters
 
 type Filter = (Text,Term)
+
 -- | This function initializes a global template store (i.e a 'Templates' value)
 -- and fills it with the resulting compiled templates if all of them are
 -- compiled successfully. If that's not the case, this function returns the
@@ -110,12 +113,12 @@ type Filter = (Text,Term)
 --
 -- This would try to load @home.tpl@, printing any errors or performing the
 -- actions given by @...@.
-loadTemplates :: (TemplateFiles api, Applicative m, MonadIO m)
+loadTemplates :: (TemplateFiles api)
               => Proxy api
               -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
               -> FilePath -- ^ root directory for the templates
-              -> (LoadedTemplates => m r)
-              -> m (Either Errors r)
+              -> (LoadedTemplates => IO r)
+              -> IO (Either Errors r)
 loadTemplates proxy fpairs dir k = do
   let flts = fromList fpairs
   res <- loadTemplates' proxy dir
@@ -124,14 +127,14 @@ loadTemplates proxy fpairs dir k = do
     Right tpls -> do
       fmap Right $ withDict @LoadedTemplates (TemplatesAndFilters tpls flts) k
 
-loadTemplates' :: (TemplateFiles api, Applicative m, MonadIO m)
+loadTemplates' :: (TemplateFiles api)
                => Proxy api
                -> FilePath
-               -> m (Either Errors (HashMap FilePath Template))
+               -> IO (Either Errors (HashMap FilePath Template))
 loadTemplates' proxy
   = fmap (eitherValidate . fmap fold)
   . runValidateT
-  . for (templateFiles proxy)
+  . for (S.toList $ templateFiles proxy)
   . processFile
 
 -- | A generic template combinator, parametrized over
@@ -295,7 +298,7 @@ sanitizeValue x = x
 -- associated to them.
 type TemplateFiles :: k -> Constraint
 class TemplateFiles api where
-  templateFiles :: Proxy api -> [FilePath]
+  templateFiles :: Proxy api -> HashSet FilePath
 
 instance (TemplateFiles a, TemplateFiles b) => TemplateFiles (a :<|> b) where
   templateFiles _ = templateFiles (Proxy @a) <> templateFiles (Proxy @b)
@@ -316,16 +319,16 @@ instance TemplateFiles (ToServantApi a) => TemplateFiles (NamedRoutes a) where
 -- | Collect template files for a given set of content types.
 type ContentTemplateFiles :: [Type] -> Type -> Constraint
 class ContentTemplateFiles c a where
-  contentTemplatesFor :: Proxy c -> Proxy a -> [FilePath]
+  contentTemplatesFor :: Proxy c -> Proxy a -> HashSet FilePath
 
 instance ContentTemplateFiles '[] a where
   contentTemplatesFor _ _ = mempty
 
 instance {-# OVERLAPPING #-} (HasTemplate HTML a, ContentTemplateFiles cs a) => ContentTemplateFiles (HTML ': cs) a where
-  contentTemplatesFor _ pa = templateFor (Proxy @HTML) pa : contentTemplatesFor (Proxy @cs) pa
+  contentTemplatesFor _ pa = S.insert (templateFor (Proxy @HTML) pa) $ contentTemplatesFor (Proxy @cs) pa
 
 instance {-# OVERLAPPING #-} (HasTemplate c a, ContentTemplateFiles cs a) => ContentTemplateFiles (Tpl c ': cs) a where
-  contentTemplatesFor _ pa = templateFor (Proxy @c) pa : contentTemplatesFor (Proxy @cs) pa
+  contentTemplatesFor _ pa = S.insert (templateFor (Proxy @c) pa) $ contentTemplatesFor (Proxy @cs) pa
 
 instance {-# OVERLAPPABLE #-} (ContentTemplateFiles cs a) => ContentTemplateFiles (c ': cs) a where
   contentTemplatesFor _ pa = contentTemplatesFor (Proxy @cs) pa
@@ -344,9 +347,14 @@ type TemplateError = (FilePath, String)
 -- | A list of 'TemplateError's.
 type Errors = [TemplateError]
 
-processFile :: MonadIO m => FilePath -> FilePath -> ValidateT Errors m (HashMap FilePath Template)
-processFile d fp = validate . liftIO $ parseFile' (d </> fp)
-
-  where parseFile' f = fmap validateResult (parseFile f)
-        validateResult (Success t) = OK (HM.singleton fp t)
-        validateResult (Failure e) = NotOK [(fp, show e)]
+processFile :: FilePath -> FilePath -> ValidateT Errors IO (HashMap FilePath Template)
+processFile d fp
+  = validate
+  $ fmap
+      ( either
+          (NotOK . pure . (fp,) . show)
+          (OK . HM.singleton fp)
+      . eitherResult
+      )
+  $ parseFile
+  $ d </> fp
