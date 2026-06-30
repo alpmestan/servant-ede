@@ -37,7 +37,10 @@ library
     , http-media
     , http-types
     , semigroups
+    , containers
+    , monoidal-containers
     , servant
+    , servant-server
     , text
     , transformers
     , unordered-containers

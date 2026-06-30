@@ -61,9 +61,9 @@ filters = ["toChars" @: (chunksOf 1)]
 
 main :: IO ()
 main = do
-  void $
-    loadTemplates api filters "example" $
-      run 8082 (serve api $ styleServer :<|> userServer)
+  void $ do
+    app <- serveWithContextAndTemplates filters "example" api EmptyContext $ styleServer :<|> userServer
+    run 8082 app
 
 
 -- You can now head to:

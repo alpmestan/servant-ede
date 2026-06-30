@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneKindSignatures   #-}
@@ -45,19 +46,22 @@ module Servant.EDE
     -- * Sending Haskell data to templates
   , ToObject(..)
 
-  , -- * Loading template files (mandatory)
-    loadTemplates
+  , serveWithContextAndTemplates
+  , unsafeLoadTemplates
   , LoadedTemplates
   , TemplateFiles(..)
   , HasTemplate(..)
-  , Errors
-  , TemplateError
   ) where
 
 #if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
 #endif
 
+import Control.Monad.IO.Class
+import Data.Map (Map)
+import qualified Data.Map as M
+import qualified Data.Map.Monoidal as MM
+import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.HashSet as S
 import Data.HashSet (HashSet)
 import Data.Traversable (for)
@@ -81,6 +85,7 @@ import Text.EDE
 import Text.EDE.Filters (Term)
 import Text.HTML.SanitizeXSS
 import Data.ByteString.Lazy (ByteString)
+import Servant.Server
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector         as V
@@ -92,6 +97,33 @@ class LoadedTemplates where
   loadedTemplates :: TemplatesAndFilters
 
 type Filter = (Text,Term)
+
+serveWithContextAndTemplates
+    :: forall api ctx
+     . ( LoadedTemplates => HasServer api ctx
+       , ServerContext ctx
+       , TemplateFiles api
+       )
+    => [Filter]
+    -> FilePath
+    -> Proxy api
+    -> Context ctx
+    -> ServerT api Handler
+    -> IO (Application)
+serveWithContextAndTemplates fs dir api ctx server = do
+  r <-
+    unsafeLoadTemplates (Proxy @api) fs dir
+      $ pure
+      $ serveWithContext api ctx server
+  case r of
+    Left es ->
+      error $ unlines $ do
+        (fp, errs) <- M.toList es
+        (fp <> ":") : do
+          err <- S.toList errs
+          pure $ "- " <> err
+    Right a -> pure a
+
 
 -- | This function initializes a global template store (i.e a 'Templates' value)
 -- and fills it with the resulting compiled templates if all of them are
@@ -109,21 +141,26 @@ type Filter = (Text,Term)
 -- > api = Proxy
 -- >
 -- > main :: IO ()
--- > main = either print pure $ loadTemplates api "path/to/templates" $ ...
+-- > main = either print pure $ unsafeLoadTemplates api "path/to/templates" $ ...
 --
 -- This would try to load @home.tpl@, printing any errors or performing the
 -- actions given by @...@.
-loadTemplates :: (TemplateFiles api)
-              => Proxy api
-              -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
-              -> FilePath -- ^ root directory for the templates
-              -> (LoadedTemplates => IO r)
-              -> IO (Either Errors r)
-loadTemplates proxy fpairs dir k = do
+--
+-- This function is unsafe because nothing ties the provided 'LoadedTemplates'
+-- instance to the given @api@. You should prefer
+-- 'serveWithContextAndTemplates' whenever possible.
+unsafeLoadTemplates
+  :: (TemplateFiles api, MonadIO m)
+  => Proxy api
+  -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
+  -> FilePath -- ^ root directory for the templates
+  -> (LoadedTemplates => m r)
+  -> m (Either (Map FilePath (HashSet String)) r)
+unsafeLoadTemplates proxy fpairs dir k = do
   let flts = fromList fpairs
-  res <- loadTemplates' proxy dir
+  res <- liftIO $ loadTemplates' proxy dir
   case res of
-    Left errs  -> pure $ Left errs
+    Left errs  -> pure $ Left $ MM.getMonoidalMap errs
     Right tpls -> do
       fmap Right $ withDict @LoadedTemplates (TemplatesAndFilters tpls flts) k
 
@@ -180,7 +217,7 @@ loadTemplates' proxy
 --
 -- main :: IO ()
 -- main = do
---   loadTemplates styleAPI "./templates" $ run 8082 (serve styleAPI server)
+--   unsafeLoadTemplates styleAPI "./templates" $ run 8082 (serve styleAPI server)
 -- @
 --
 -- This will look for a template at @.\/templates\/style.tpl@,
@@ -258,7 +295,7 @@ instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRende
 -- server = return (User "lambdabot" 31)
 --
 -- main :: IO ()
--- main = either print pure $ loadTemplates userAPI "./templates" $ run 8082 (serve userAPI server)
+-- main = either print pure $ unsafeLoadTemplates userAPI "./templates" $ run 8082 (serve userAPI server)
 -- @
 --
 -- This will look for a template at @.\/templates\/user.tpl@, which could
@@ -340,19 +377,14 @@ data TemplatesAndFilters = TemplatesAndFilters
   , filters   :: HashMap Text Term
   }
 
--- | A 'TemplateError' is a pair of a template filename
---   and the error string for that file.
-type TemplateError = (FilePath, String)
-
--- | A list of 'TemplateError's.
-type Errors = [TemplateError]
+type Errors = MonoidalMap FilePath (HashSet String)
 
 processFile :: FilePath -> FilePath -> ValidateT Errors IO (HashMap FilePath Template)
 processFile d fp
   = validate
   $ fmap
       ( either
-          (NotOK . pure . (fp,) . show)
+          (NotOK . MM.singleton fp . S.singleton . show)
           (OK . HM.singleton fp)
       . eitherResult
       )
