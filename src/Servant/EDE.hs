@@ -21,8 +21,8 @@
 -- |
 -- Module      :  Servant.EDE
 -- Copyright   :  (c) Alp Mestanogullari 2015
--- Maintainer  :  alpmestan@gmail.com
--- Stability   :  experimental
+-- Maintainer  :  sandy.maguire@tweag.io
+-- Stability   :  stable
 --
 -- Rendering EDE templates with servant.
 --
@@ -93,11 +93,15 @@ import qualified Data.Vector         as V
 -- | Special class for safely passing IO-loaded templates into type-level
 -- combinators. Instances of 'LoadedTemplates' are only provided by
 -- 'loadTemplates'.
+--
+-- @since 1.0.0.0
 class LoadedTemplates where
   loadedTemplates :: TemplatesAndFilters
 
+-- @since 0.6
 type Filter = (Text,Term)
 
+-- @since 1.0.0.0
 serveWithContextAndTemplates
     :: forall api ctx
      . ( LoadedTemplates => HasServer api ctx
@@ -149,6 +153,8 @@ serveWithContextAndTemplates fs dir api ctx server = do
 -- This function is unsafe because nothing ties the provided 'LoadedTemplates'
 -- instance to the given @api@. You should prefer
 -- 'serveWithContextAndTemplates' whenever possible.
+--
+-- @since 1.0.0.0
 unsafeLoadTemplates
   :: (TemplateFiles api, MonadIO m)
   => Proxy api
@@ -240,11 +246,14 @@ loadTemplates' proxy
 --
 -- A complete, runnable version of this can be found
 -- in the @examples@ folder of the git repository.
+--
+-- @since 0.4
 data Tpl (ct :: Type)
 
 instance Accept ct => Accept (Tpl ct) where
   contentType _ = contentType $ Proxy @ct
 
+-- | @since 1.0.0.0
 class HasTemplate ct a where
   templateFor :: Proxy ct -> Proxy a -> FilePath
 
@@ -308,6 +317,8 @@ instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRende
 --
 -- /IMPORTANT/: it XSS-sanitizes every bit of text in the 'Object'
 -- passed to the template.
+--
+-- @since 0.4
 data HTML
 
 -- | @text/html;charset=utf-8@
