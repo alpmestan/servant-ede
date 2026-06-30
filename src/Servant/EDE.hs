@@ -92,7 +92,7 @@ import qualified Data.Vector         as V
 
 -- | Special class for safely passing IO-loaded templates into type-level
 -- combinators. Instances of 'LoadedTemplates' are only provided by
--- 'loadTemplates'.
+-- 'serveWithContextAndTemplates' and 'unsafeLoadTemplates'.
 --
 -- @since 1.0.0.0
 class LoadedTemplates where
@@ -183,11 +183,8 @@ loadTemplates' proxy
 -- | A generic template combinator, parametrized over
 --   the content-type (or MIME) associated to the template.
 --
---   The first parameter is the content-type you want to send along with
---   rendered templates (must be an instance of 'Accept').
---
---   The second parameter is the name of (or path to) the template file.
---   It must live under the 'FilePath' argument of 'loadTemplates'.
+--   The parameter is the content-type you want to send along with rendered
+--   templates (must be an instance of 'Accept').
 --
 --   Any type used with this content-type (like @CSSData@ below)
 --   must have an instance of the 'ToObject' class. The field names
@@ -223,7 +220,7 @@ loadTemplates' proxy
 --
 -- main :: IO ()
 -- main = do
---   unsafeLoadTemplates styleAPI "./templates" $ run 8082 (serve styleAPI server)
+--   run 8082 =<< 'serveWithContextAndTemplates' [] "./templates" styleAPI EmptyContext server
 -- @
 --
 -- This will look for a template at @.\/templates\/style.tpl@,
@@ -253,7 +250,10 @@ data Tpl (ct :: Type)
 instance Accept ct => Accept (Tpl ct) where
   contentType _ = contentType $ Proxy @ct
 
--- | @since 1.0.0.0
+-- | Given a content type and an type of handler output, give a path to an EDE
+-- template file.
+--
+-- @since 1.0.0.0
 class HasTemplate ct a where
   templateFor :: Proxy ct -> Proxy a -> FilePath
 
@@ -304,7 +304,7 @@ instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRende
 -- server = return (User "lambdabot" 31)
 --
 -- main :: IO ()
--- main = either print pure $ unsafeLoadTemplates userAPI "./templates" $ run 8082 (serve userAPI server)
+-- main = run 8082 =<< 'serveWithContextAndTemplates' [] "./templates" userAPI NoContext server
 -- @
 --
 -- This will look for a template at @.\/templates\/user.tpl@, which could
