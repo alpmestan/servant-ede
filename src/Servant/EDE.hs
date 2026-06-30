@@ -1,17 +1,19 @@
-{-# LANGUAGE CPP                      #-}
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE OverloadedStrings        #-}
-{-# LANGUAGE PolyKinds                #-}
-{-# LANGUAGE RankNTypes               #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
-{-# LANGUAGE TypeOperators            #-}
-{-# LANGUAGE UndecidableInstances     #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -47,16 +49,15 @@ module Servant.EDE
   , LoadedTemplates
   , TemplateFiles(..)
   , HasTemplate(..)
-  , Templates
   , Errors
   , TemplateError
   ) where
 
 #if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
-import Data.Traversable (traverse)
 #endif
 
+import Data.Traversable (for)
 import GHC.Base (withDict)
 import Control.Monad.IO.Class
 import qualified Data.Aeson.KeyMap as KeyMap
@@ -77,6 +78,7 @@ import System.FilePath
 import Text.EDE
 import Text.EDE.Filters (Term)
 import Text.HTML.SanitizeXSS
+import Data.ByteString.Lazy (ByteString)
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector         as V
@@ -124,14 +126,13 @@ loadTemplates proxy fpairs dir k = do
 
 loadTemplates' :: (TemplateFiles api, Applicative m, MonadIO m)
                => Proxy api
-               -> FilePath   -- ^ root directory for the templates
-               -> m (Either Errors Templates)
-loadTemplates' proxy templatedir =
-  fmap (eitherValidate . fmap fold) . runValidateT $
-    traverse (processFile templatedir) files
-
-  where files :: [FilePath]
-        files = templateFiles proxy
+               -> FilePath
+               -> m (Either Errors (HashMap FilePath Template))
+loadTemplates' proxy
+  = fmap (eitherValidate . fmap fold)
+  . runValidateT
+  . for (templateFiles proxy)
+  . processFile
 
 -- | A generic template combinator, parametrized over
 --   the content-type (or MIME) associated to the template.
@@ -202,19 +203,32 @@ loadTemplates' proxy templatedir =
 data Tpl (ct :: Type)
 
 instance Accept ct => Accept (Tpl ct) where
-  contentType _ = contentType ctproxy
-    where ctproxy = Proxy :: Proxy ct
+  contentType _ = contentType $ Proxy @ct
 
 class HasTemplate ct a where
   templateFor :: Proxy ct -> Proxy a -> FilePath
 
+
+-- | Common implementation of 'mimeRender'.
+doMimeRender
+    :: (LoadedTemplates, ToObject a)
+    => (Object -> Object)
+    -- ^ Transformation on the object data before rendering.
+    -> FilePath
+    -> a
+    -> ByteString
+doMimeRender process fp
+  = encodeUtf8
+  . result (error . show) id
+  . renderWith (filters loadedTemplates) (templates loadedTemplates ! fp)
+  . HM.fromList
+  . fmap (first Key.toText)
+  . KeyMap.toList
+  . process
+  . toObject
+
 instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRender (Tpl ct) a where
-  mimeRender _ val =
-    let tmap = templateMap $ _templates loadedTemplates
-        flts = _filters loadedTemplates
-        mkObject = fromList . map (first Key.toText) . KeyMap.toList . toObject
-     in encodeUtf8 . result (error . show) id $
-          renderWith flts (tmap ! templateFor (Proxy @ct) (Proxy @a)) (mkObject val)
+  mimeRender _ = doMimeRender id $ templateFor (Proxy @ct) (Proxy @a)
 
 -- | 'HTML' content type, but more than just that.
 --
@@ -262,12 +276,7 @@ instance Accept HTML where
 
 -- | XSS-sanitizes data before rendering it
 instance (LoadedTemplates, HasTemplate HTML a, ToObject a) => MimeRender HTML a where
-  mimeRender _ val =
-    let tmap = templateMap $ _templates loadedTemplates
-        flts = _filters loadedTemplates
-        mkObject = fromList . map (first Key.toText) . KeyMap.toList . sanitizeObject . toObject
-     in encodeUtf8 . result (error . show) id $
-          renderWith flts (tmap ! templateFor (Proxy @HTML) (Proxy @a)) (mkObject val)
+  mimeRender _ = doMimeRender sanitizeObject $ templateFor (Proxy @HTML) (Proxy @a)
 
 sanitizeObject :: Object -> Object
 sanitizeObject = KeyMap.fromList . map sanitizeKV . KeyMap.toList
@@ -281,10 +290,9 @@ sanitizeValue (Array a) = Array (V.map sanitizeValue a)
 sanitizeValue (Object o) = Object (sanitizeObject o)
 sanitizeValue x = x
 
--- -- | Collect all the template filenames of an API as a type-level
--- --   list of strings, by simply looking at all occurences of the
--- --   'Tpl' and 'HTML' combinators and keeping the filenames associated to them.
-
+-- | Collect all the template filenames of an API by simply looking at all
+-- occurences of the 'Tpl' and 'HTML' combinators and keeping the filenames
+-- associated to them.
 type TemplateFiles :: k -> Constraint
 class TemplateFiles api where
   templateFiles :: Proxy api -> [FilePath]
@@ -305,6 +313,7 @@ instance TemplateFiles (ToServantApi a) => TemplateFiles (NamedRoutes a) where
   templateFiles _ = templateFiles (Proxy @(ToServantApi a))
 
 
+-- | Collect template files for a given set of content types.
 type ContentTemplateFiles :: [Type] -> Type -> Constraint
 class ContentTemplateFiles c a where
   contentTemplatesFor :: Proxy c -> Proxy a -> [FilePath]
@@ -321,35 +330,12 @@ instance {-# OVERLAPPING #-} (HasTemplate c a, ContentTemplateFiles cs a) => Con
 instance {-# OVERLAPPABLE #-} (ContentTemplateFiles cs a) => ContentTemplateFiles (c ': cs) a where
   contentTemplatesFor _ pa = contentTemplatesFor (Proxy @cs) pa
 
--- | An opaque "compiled-template store".
---
--- The only way to get a value of this type is to use
--- 'Servant.EDE.loadTemplates' on a proxy of your API.
---
--- This ensures that when we lookup a template (in order
--- to render it) in our 'Templates' store, we are
--- guaranteed to find it.
-newtype Templates = Templates (HashMap String Template)
-  deriving Eq
-
-templateMap :: Templates -> HashMap String Template
-templateMap (Templates m) = m
-
-instance Semigroup Templates where
-  Templates a <> Templates b = Templates (a <> b)
-
-instance Monoid Templates where
-  mempty = Templates mempty
-
 -- A data type that holds both the compiled templates and
 -- any passed-in custom filters
-data TemplatesAndFilters = TemplatesAndFilters {
-                                  _templates :: Templates
-                                , _filters   :: HashMap Text Term
-                                }
-
-tpl :: FilePath -> Template -> Templates
-tpl fp t = Templates $ HM.singleton fp t
+data TemplatesAndFilters = TemplatesAndFilters
+  { templates :: HashMap FilePath Template
+  , filters   :: HashMap Text Term
+  }
 
 -- | A 'TemplateError' is a pair of a template filename
 --   and the error string for that file.
@@ -358,12 +344,9 @@ type TemplateError = (FilePath, String)
 -- | A list of 'TemplateError's.
 type Errors = [TemplateError]
 
-err :: Show a => FilePath -> a -> Errors
-err fp d = [(fp, show d)]
-
-processFile :: MonadIO m => FilePath -> FilePath -> ValidateT Errors m Templates
+processFile :: MonadIO m => FilePath -> FilePath -> ValidateT Errors m (HashMap FilePath Template)
 processFile d fp = validate . liftIO $ parseFile' (d </> fp)
 
   where parseFile' f = fmap validateResult (parseFile f)
-        validateResult (Success t) = OK (tpl fp t)
-        validateResult (Failure e) = NotOK (err fp e)
+        validateResult (Success t) = OK (HM.singleton fp t)
+        validateResult (Failure e) = NotOK [(fp, show e)]

@@ -5,14 +5,12 @@
 {-# LANGUAGE TypeOperators         #-}
 
 import Control.Monad
-import Data.Monoid
 import GHC.Generics
 import Network.HTTP.Media ((//))
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.EDE
 import Text.EDE.Filters ((@:),Term)
-import qualified Data.HashMap.Strict as Map
 import Data.Text (Text, chunksOf)
 
 -- * Using 'Tpl' for rendering CSS templates
