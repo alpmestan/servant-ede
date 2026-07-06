@@ -5,14 +5,12 @@
 {-# LANGUAGE TypeOperators         #-}
 
 import Control.Monad
-import Data.Monoid
 import GHC.Generics
 import Network.HTTP.Media ((//))
 import Network.Wai.Handler.Warp
 import Servant
 import Servant.EDE
 import Text.EDE.Filters ((@:),Term)
-import qualified Data.HashMap.Strict as Map
 import Data.Text (Text, chunksOf)
 
 -- * Using 'Tpl' for rendering CSS templates
@@ -63,9 +61,9 @@ filters = ["toChars" @: (chunksOf 1)]
 
 main :: IO ()
 main = do
-  void $
-    loadTemplates api filters "example" $
-      run 8082 (serve api $ styleServer :<|> userServer)
+  void $ do
+    app <- serveWithContextAndTemplates filters "example" api EmptyContext $ styleServer :<|> userServer
+    run 8082 app
 
 
 -- You can now head to:

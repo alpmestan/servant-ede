@@ -37,16 +37,18 @@ import GHC.Generics
 -- > instance ToObject User
 --
 -- This will generate an equivalent instance to the previous one.
+--
+-- @since 0.4
 class ToObject a where
 
   -- | Turn values of type @a@ into JSON 'Object's.
   --
-  -- @ 
+  -- @
   -- -- Reminder:
   -- type Object = 'KeyMap' 'Value'
   -- @
   toObject :: a -> Object
-  
+
   default toObject :: (Generic a, GToObject (Rep a)) => a -> Object
   toObject = genericToObject
 
