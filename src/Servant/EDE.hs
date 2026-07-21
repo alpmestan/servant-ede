@@ -366,6 +366,9 @@ instance TemplateFiles Raw where
 instance TemplateFiles (ToServantApi a) => TemplateFiles (NamedRoutes a) where
   templateFiles _ = templateFiles (Proxy @(ToServantApi a))
 
+instance TemplateFiles EmptyAPI where
+  templateFiles _ = mempty
+
 
 -- | Collect template files for a given set of content types.
 --
