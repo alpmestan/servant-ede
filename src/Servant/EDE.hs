@@ -50,6 +50,7 @@ module Servant.EDE
   , unsafeLoadTemplates
   , LoadedTemplates
   , TemplateFiles(..)
+  , ContentTemplateFiles(..)
   , HasTemplate(..)
   ) where
 
