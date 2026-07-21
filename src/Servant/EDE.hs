@@ -345,6 +345,8 @@ sanitizeValue x = x
 -- | Collect all the template filenames of an API by simply looking at all
 -- occurences of the 'Tpl' and 'HTML' combinators and keeping the filenames
 -- associated to them.
+--
+-- @since 1.0.0.0
 type TemplateFiles :: k -> Constraint
 class TemplateFiles api where
   templateFiles :: Proxy api -> HashSet FilePath
@@ -366,6 +368,8 @@ instance TemplateFiles (ToServantApi a) => TemplateFiles (NamedRoutes a) where
 
 
 -- | Collect template files for a given set of content types.
+--
+-- @since 1.0.0.0
 type ContentTemplateFiles :: [Type] -> Type -> Constraint
 class ContentTemplateFiles c a where
   contentTemplatesFor :: Proxy c -> Proxy a -> HashSet FilePath
