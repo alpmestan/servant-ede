@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -50,6 +51,8 @@ module Servant.EDE
   , unsafeLoadTemplates
   , LoadedTemplates
   , TemplateFiles(..)
+  , ReifiedTemplate(..)
+  , Trivial
   , ContentTemplateFiles(..)
   , HasTemplate(..)
   ) where
@@ -97,7 +100,7 @@ import qualified Data.Vector         as V
 --
 -- @since 1.0.0.0
 class LoadedTemplates where
-  loadedTemplates :: TemplatesAndFilters
+  loadedTemplates :: TemplatesAndFilters Trivial
 
 -- @since 0.6
 type Filter = (Text,Term)
@@ -107,7 +110,7 @@ serveWithContextAndTemplates
     :: forall api ctx global
      . ( LoadedTemplates => HasServer api ctx
        , ServerContext ctx
-       , TemplateFiles api
+       , TemplateFiles Trivial api
        , ToObject global
        )
     => [Filter]
@@ -162,7 +165,7 @@ serveWithContextAndTemplates fs dir global api ctx server = do
 --
 -- @since 1.0.0.0
 unsafeLoadTemplates
-  :: (TemplateFiles api, MonadIO m, ToObject global)
+  :: (TemplateFiles Trivial api, MonadIO m, ToObject global)
   => Proxy api
   -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
   -> FilePath -- ^ root directory for the templates
@@ -177,14 +180,16 @@ unsafeLoadTemplates proxy fpairs dir global k = do
     Right tpls -> do
       fmap Right $ withDict @LoadedTemplates (TemplatesAndFilters tpls flts $ toObject global) k
 
-loadTemplates' :: (TemplateFiles api)
-               => Proxy api
-               -> FilePath
-               -> IO (Either Errors (HashMap FilePath Template))
+
+loadTemplates'
+    :: (TemplateFiles c api, c ())
+    => Proxy api
+    -> FilePath
+    -> IO (Either Errors (HashMap FilePath (ReifiedTemplate c Template)))
 loadTemplates' proxy
   = fmap (eitherValidate . fmap fold)
   . runValidateT
-  . for (S.toList $ templateFiles proxy)
+  . for (M.elems $ reifyTemplates proxy)
   . processFile
 
 -- | A generic template combinator, parametrized over
@@ -252,17 +257,17 @@ loadTemplates' proxy
 -- in the @examples@ folder of the git repository.
 --
 -- @since 0.4
-data Tpl (ct :: Type)
+data Tpl (contentType :: Type)
 
-instance Accept ct => Accept (Tpl ct) where
-  contentType _ = contentType $ Proxy @ct
+instance Accept contentType => Accept (Tpl contentType) where
+  contentType _ = contentType $ Proxy @contentType
 
 -- | Given a content type and an type of handler output, give a path to an EDE
 -- template file.
 --
 -- @since 1.0.0.0
-class HasTemplate ct a where
-  templateFor :: Proxy ct -> Proxy a -> FilePath
+class HasTemplate contentType a where
+  templateFor :: Proxy contentType -> Proxy a -> FilePath
 
 
 -- | Common implementation of 'mimeRender'.
@@ -276,7 +281,7 @@ doMimeRender
 doMimeRender process fp
   = encodeUtf8
   . result (error . show) id
-  . renderWith (filters loadedTemplates) (templates loadedTemplates ! fp)
+  . renderWith (filters loadedTemplates) (unReifiedTemplate $ templates loadedTemplates ! fp)
   . HM.fromList
   . fmap (first Key.toText)
   . KeyMap.toList
@@ -286,8 +291,8 @@ doMimeRender process fp
     (<> globalObj loadedTemplates)
   . toObject
 
-instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRender (Tpl ct) a where
-  mimeRender _ = doMimeRender id $ templateFor (Proxy @ct) (Proxy @a)
+instance (LoadedTemplates, HasTemplate contentType a, Accept contentType, ToObject a) => MimeRender (Tpl contentType) a where
+  mimeRender _ = doMimeRender id $ templateFor (Proxy @contentType) (Proxy @a)
 
 -- | 'HTML' content type, but more than just that.
 --
@@ -355,66 +360,134 @@ sanitizeValue x = x
 -- occurences of the 'Tpl' and 'HTML' combinators and keeping the filenames
 -- associated to them.
 --
+-- The @c@ parameter is of kind @'Type' -> 'Constraint'@ and can be used to
+-- ensure every that every return type in your API satisfies some constraint.
+-- If you don't have a need for this parameter, you can fill it in with
+-- 'Trivial'.
+--
 -- @since 1.0.0.0
-type TemplateFiles :: k -> Constraint
-class TemplateFiles api where
-  templateFiles :: Proxy api -> Set FilePath
+type TemplateFiles :: (Type -> Constraint) -> k -> Constraint
+class TemplateFiles c api where
+  reifyTemplates :: Proxy api -> Map FilePath (ReifiedTemplate c ())
 
-instance (TemplateFiles a, TemplateFiles b) => TemplateFiles (a :<|> b) where
-  templateFiles _ = templateFiles (Proxy @a) <> templateFiles (Proxy @b)
+instance (TemplateFiles c a, TemplateFiles c b) => TemplateFiles c (a :<|> b) where
+  reifyTemplates _ = reifyTemplates (Proxy @a) <> reifyTemplates (Proxy @b)
 
-instance (TemplateFiles api) => TemplateFiles (a :> api) where
-  templateFiles _ = templateFiles $ Proxy @api
+instance (TemplateFiles c api) => TemplateFiles c (a :> api) where
+  reifyTemplates _ = reifyTemplates $ Proxy @api
 
-instance ContentTemplateFiles c a => TemplateFiles (Verb m s c a) where
-  templateFiles _ = contentTemplatesFor (Proxy @c) (Proxy @a)
+instance ContentTemplateFiles c contentType a => TemplateFiles c (Verb m s contentType a) where
+  reifyTemplates _ = contentTemplatesFor (Proxy @contentType) (Proxy @a)
 
-instance TemplateFiles Raw where
-  templateFiles _ = mempty
+instance TemplateFiles c Raw where
+  reifyTemplates _ = mempty
 
-instance TemplateFiles (ToServantApi a) => TemplateFiles (NamedRoutes a) where
-  templateFiles _ = templateFiles (Proxy @(ToServantApi a))
+instance TemplateFiles c (ToServantApi a) => TemplateFiles c (NamedRoutes a) where
+  reifyTemplates _ = reifyTemplates (Proxy @(ToServantApi a))
 
-instance TemplateFiles EmptyAPI where
-  templateFiles _ = mempty
+instance TemplateFiles c EmptyAPI where
+  reifyTemplates _ = mempty
 
 
 -- | Collect template files for a given set of content types.
 --
 -- @since 1.0.0.0
-type ContentTemplateFiles :: [Type] -> Type -> Constraint
-class ContentTemplateFiles c a where
-  contentTemplatesFor :: Proxy c -> Proxy a -> Set FilePath
+type ContentTemplateFiles :: (Type -> Constraint) -> [Type] -> Type -> Constraint
+class ContentTemplateFiles c contentType a where
+  contentTemplatesFor :: Proxy contentType -> Proxy a -> Map FilePath (ReifiedTemplate c ())
 
-instance ContentTemplateFiles '[] a where
+instance ContentTemplateFiles c '[] a where
   contentTemplatesFor _ _ = mempty
 
-instance {-# OVERLAPPING #-} (HasTemplate HTML a, ContentTemplateFiles cs a) => ContentTemplateFiles (HTML ': cs) a where
-  contentTemplatesFor _ pa = S.insert (templateFor (Proxy @HTML) pa) $ contentTemplatesFor (Proxy @cs) pa
+instance
+    {-# OVERLAPPING #-}
+    ( HasTemplate HTML a
+    , ContentTemplateFiles c contentTypes a
+    , ToObject a
+    , c a
+    )
+      => ContentTemplateFiles c (HTML ': contentTypes) a where
+  contentTemplatesFor _ pa =
+    let fp = templateFor (Proxy @HTML) pa
+     in M.insert fp (ReifiedTemplate (Proxy @a) fp ()) $ contentTemplatesFor (Proxy @contentTypes) pa
+    -- S.insert (templateFor (Proxy @HTML) pa) $ contentTemplatesFor (Proxy @contentTypes) pa
 
-instance {-# OVERLAPPING #-} (HasTemplate c a, ContentTemplateFiles cs a) => ContentTemplateFiles (Tpl c ': cs) a where
-  contentTemplatesFor _ pa = S.insert (templateFor (Proxy @c) pa) $ contentTemplatesFor (Proxy @cs) pa
+instance
+    {-# OVERLAPPING #-}
+    ( HasTemplate contentType a
+    , ContentTemplateFiles c contentTypes a
+    , ToObject a
+    , c a
+    )
+      => ContentTemplateFiles c (Tpl contentType ': contentTypes) a where
+  contentTemplatesFor _ pa =
+    let fp = templateFor (Proxy @contentType) pa
+     in M.insert fp (ReifiedTemplate (Proxy @a) fp ()) $ contentTemplatesFor (Proxy @contentTypes) pa
 
-instance {-# OVERLAPPABLE #-} (ContentTemplateFiles cs a) => ContentTemplateFiles (c ': cs) a where
-  contentTemplatesFor _ pa = contentTemplatesFor (Proxy @cs) pa
+instance
+    {-# OVERLAPPABLE #-}
+    (ContentTemplateFiles c contentTypes a)
+      => ContentTemplateFiles c (contentType ': contentTypes) a where
+  contentTemplatesFor _ pa = contentTemplatesFor (Proxy @contentTypes) pa
 
 -- A data type that holds both the compiled templates and
 -- any passed-in custom filters
-data TemplatesAndFilters = TemplatesAndFilters
-  { templates :: HashMap FilePath Template
+data TemplatesAndFilters c = TemplatesAndFilters
+  { templates :: HashMap FilePath (ReifiedTemplate c Template)
   , filters   :: HashMap Text Term
   , globalObj :: Object
   }
 
+-- | A trivial class that always has instances for every type. This is useful
+-- when you don't need the full power of 'TemplateFiles' or 'ReifiedTemplate'.
+class Trivial a
+instance Trivial a
+
+-- | A 'ReifiedTemplate' contains the filepath of the template, as well as its
+-- return type, and an optional constraint @c@ that the return type is
+-- guaranteed to satisfy. For example, you can generate property tests showing
+-- that your templates compile and can be instantiated by letting @c
+-- ~ TestableC@, where
+--
+-- @
+-- class (Show a, Eq a, Arbitrary a) => TestableC a
+-- instance (Show a, Eq a, Arbitrary a) => TestableC a
+-- @
+--
+-- and then use 'reifyTemplates' to get a map of @'ReifiedTemplate' TestableC ()@s.
+-- By subsequently pattern matching on the 'ReifiedTemplate' constructor, you
+-- now have everything in scope necessary to write a quickcheck-style property
+-- test.
+type ReifiedTemplate :: (Type -> Constraint) -> Type -> Type
+data ReifiedTemplate c x where
+  ReifiedTemplate
+    :: (c a, ToObject a)
+    => { mt_proxy :: Proxy a
+       , mt_path :: FilePath
+       , unReifiedTemplate :: x
+       } -> ReifiedTemplate c x
+
+instance Functor (ReifiedTemplate c) where
+  fmap f (ReifiedTemplate p fp a) = ReifiedTemplate p fp $ f a
+
+instance Foldable (ReifiedTemplate c) where
+  foldMap f (ReifiedTemplate _ _ a) = f a
+
+instance Traversable (ReifiedTemplate c) where
+  traverse f (ReifiedTemplate p fp a) = fmap (ReifiedTemplate p fp) $ f a
+
 type Errors = MonoidalMap FilePath (Set String)
 
-processFile :: FilePath -> FilePath -> ValidateT Errors IO (HashMap FilePath Template)
-processFile d fp
+processFile
+    :: FilePath
+    -> ReifiedTemplate c ()
+    -> ValidateT Errors IO (HashMap FilePath (ReifiedTemplate c Template))
+processFile d (ReifiedTemplate p fp ())
   = validate
   $ fmap
       ( either
           (NotOK . MM.singleton fp . S.singleton . show)
-          (OK . HM.singleton fp)
+          (OK . HM.singleton fp . ReifiedTemplate p (d </> fp))
       . eitherResult
       )
   $ parseFile
