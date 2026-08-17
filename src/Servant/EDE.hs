@@ -63,8 +63,8 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.Map.Monoidal as MM
 import Data.Map.Monoidal (MonoidalMap)
-import qualified Data.HashSet as S
-import Data.HashSet (HashSet)
+import qualified Data.Set as S
+import Data.Set (Set)
 import Data.Traversable (for)
 import GHC.Base (withDict)
 import qualified Data.Aeson.KeyMap as KeyMap
@@ -168,7 +168,7 @@ unsafeLoadTemplates
   -> FilePath -- ^ root directory for the templates
   -> global
   -> (LoadedTemplates => m r)
-  -> m (Either (Map FilePath (HashSet String)) r)
+  -> m (Either (Map FilePath (Set String)) r)
 unsafeLoadTemplates proxy fpairs dir global k = do
   let flts = fromList fpairs
   res <- liftIO $ loadTemplates' proxy dir
@@ -358,7 +358,7 @@ sanitizeValue x = x
 -- @since 1.0.0.0
 type TemplateFiles :: k -> Constraint
 class TemplateFiles api where
-  templateFiles :: Proxy api -> HashSet FilePath
+  templateFiles :: Proxy api -> Set FilePath
 
 instance (TemplateFiles a, TemplateFiles b) => TemplateFiles (a :<|> b) where
   templateFiles _ = templateFiles (Proxy @a) <> templateFiles (Proxy @b)
@@ -384,7 +384,7 @@ instance TemplateFiles EmptyAPI where
 -- @since 1.0.0.0
 type ContentTemplateFiles :: [Type] -> Type -> Constraint
 class ContentTemplateFiles c a where
-  contentTemplatesFor :: Proxy c -> Proxy a -> HashSet FilePath
+  contentTemplatesFor :: Proxy c -> Proxy a -> Set FilePath
 
 instance ContentTemplateFiles '[] a where
   contentTemplatesFor _ _ = mempty
@@ -406,7 +406,7 @@ data TemplatesAndFilters = TemplatesAndFilters
   , globalObj :: Object
   }
 
-type Errors = MonoidalMap FilePath (HashSet String)
+type Errors = MonoidalMap FilePath (Set String)
 
 processFile :: FilePath -> FilePath -> ValidateT Errors IO (HashMap FilePath Template)
 processFile d fp
