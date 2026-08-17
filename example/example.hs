@@ -62,7 +62,7 @@ filters = ["toChars" @: (chunksOf 1)]
 main :: IO ()
 main = do
   void $ do
-    app <- serveWithContextAndTemplates filters "example" api EmptyContext $ styleServer :<|> userServer
+    app <- serveWithContextAndTemplates filters "example" () api EmptyContext $ styleServer :<|> userServer
     run 8082 app
 
 

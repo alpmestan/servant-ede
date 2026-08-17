@@ -104,20 +104,25 @@ type Filter = (Text,Term)
 
 -- @since 1.0.0.0
 serveWithContextAndTemplates
-    :: forall api ctx
+    :: forall api ctx global
      . ( LoadedTemplates => HasServer api ctx
        , ServerContext ctx
        , TemplateFiles api
+       , ToObject global
        )
     => [Filter]
     -> FilePath
+    -> global
+    -- ^ A global object that is available inside every templates. If the names
+    -- in this object overlap names in the template-specific object, the
+    -- template's keys will shadow the global object's.
     -> Proxy api
     -> Context ctx
     -> ServerT api Handler
     -> IO (Application)
-serveWithContextAndTemplates fs dir api ctx server = do
+serveWithContextAndTemplates fs dir global api ctx server = do
   r <-
-    unsafeLoadTemplates (Proxy @api) fs dir
+    unsafeLoadTemplates (Proxy @api) fs dir global
       $ pure
       $ serveWithContext api ctx server
   case r of
@@ -157,19 +162,20 @@ serveWithContextAndTemplates fs dir api ctx server = do
 --
 -- @since 1.0.0.0
 unsafeLoadTemplates
-  :: (TemplateFiles api, MonadIO m)
+  :: (TemplateFiles api, MonadIO m, ToObject global)
   => Proxy api
   -> [Filter] -- ^ list of (Text,Term) pairs. Pass [] to use just the standard library
   -> FilePath -- ^ root directory for the templates
+  -> global
   -> (LoadedTemplates => m r)
   -> m (Either (Map FilePath (HashSet String)) r)
-unsafeLoadTemplates proxy fpairs dir k = do
+unsafeLoadTemplates proxy fpairs dir global k = do
   let flts = fromList fpairs
   res <- liftIO $ loadTemplates' proxy dir
   case res of
     Left errs  -> pure $ Left $ MM.getMonoidalMap errs
     Right tpls -> do
-      fmap Right $ withDict @LoadedTemplates (TemplatesAndFilters tpls flts) k
+      fmap Right $ withDict @LoadedTemplates (TemplatesAndFilters tpls flts $ toObject global) k
 
 loadTemplates' :: (TemplateFiles api)
                => Proxy api
@@ -275,6 +281,9 @@ doMimeRender process fp
   . fmap (first Key.toText)
   . KeyMap.toList
   . process
+  . -- The object semigroup instance is left-biased, so we want to insert the
+    -- global object on the right to prevent any global shadowing.
+    (<> globalObj loadedTemplates)
   . toObject
 
 instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRender (Tpl ct) a where
@@ -305,7 +314,7 @@ instance (LoadedTemplates, HasTemplate ct a, Accept ct, ToObject a) => MimeRende
 -- server = return (User "lambdabot" 31)
 --
 -- main :: IO ()
--- main = run 8082 =<< 'serveWithContextAndTemplates' [] "./templates" userAPI NoContext server
+-- main = run 8082 =<< 'serveWithContextAndTemplates' [] "./templates" () userAPI NoContext server
 -- @
 --
 -- This will look for a template at @.\/templates\/user.tpl@, which could
@@ -394,6 +403,7 @@ instance {-# OVERLAPPABLE #-} (ContentTemplateFiles cs a) => ContentTemplateFile
 data TemplatesAndFilters = TemplatesAndFilters
   { templates :: HashMap FilePath Template
   , filters   :: HashMap Text Term
+  , globalObj :: Object
   }
 
 type Errors = MonoidalMap FilePath (HashSet String)
