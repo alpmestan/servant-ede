@@ -58,6 +58,9 @@ instance ToObject (HashMap.HashMap Text Value) where
 instance ToObject (KeyMap.KeyMap Value) where
   toObject = id
 
+instance ToObject () where
+  toObject = mempty
+
 class GToObject f where
   gtoObject :: f a -> Object
 
