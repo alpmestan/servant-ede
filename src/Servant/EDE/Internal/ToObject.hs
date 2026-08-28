@@ -5,6 +5,7 @@
 -- {-# LANGUAGE OverloadedStrings #-}
 module Servant.EDE.Internal.ToObject where
 
+import Control.Arrow
 import Data.Aeson
 import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Aeson.Key as Key
@@ -87,3 +88,11 @@ instance (Selector s, ToJSON a) => GToObject (M1 S s (K1 r a)) where
 
 genericToObject :: (Generic a, GToObject (Rep a)) => a -> Object
 genericToObject = gtoObject . from
+
+
+-- | Convert from 'ToObject' into something that EDE can handle directly.
+--
+-- @since 1.0.0.0
+toEdeObject :: ToObject a => a -> HashMap.HashMap Text Value
+toEdeObject = HashMap.fromList . fmap (first Key.toText) . KeyMap.toList . toObject
+

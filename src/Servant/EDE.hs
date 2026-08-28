@@ -52,12 +52,14 @@ module Servant.EDE
 
     -- * Sending Haskell data to templates
   , ToObject(..)
+  , toEdeObject
 
   , serveWithContextAndTemplates
   , unsafeLoadTemplates
   , LoadedTemplates
   , TemplateFiles(..)
   , ReifiedTemplate(..)
+  , instantiate
   , Trivial
   , ContentTemplateFiles(..)
   , HasTemplate(..)
@@ -505,13 +507,27 @@ processFile
     :: FilePath
     -> ReifiedTemplate c ()
     -> ValidateT Errors IO (HashMap FilePath (ReifiedTemplate c Template))
-processFile d (ReifiedTemplate p fp ())
+processFile d t@(ReifiedTemplate _ fp _)
   = validate
   $ fmap
       ( either
-          (NotOK . MM.singleton fp . S.singleton . show)
-          (OK . HM.singleton fp . ReifiedTemplate p fp)
-      . eitherResult
+          (NotOK . MM.singleton fp . S.singleton)
+          (OK . HM.singleton fp)
       )
+  $ instantiate d t
+
+
+-- | Parse a 'ReifiedTemplate'. This is like 'Text.EDE.parseFile', but works
+-- directly over 'ReifiedTemplate's and plays more nicely with servant-ede.
+--
+-- @since 1.0.0.0
+instantiate
+    :: FilePath
+    -- ^ Template directory
+    -> ReifiedTemplate c ()
+    -> IO (Either String (ReifiedTemplate c Template))
+instantiate d (ReifiedTemplate p fp ())
+  = fmap (fmap (ReifiedTemplate p fp) . eitherResult)
   $ parseFile
   $ d </> fp
+

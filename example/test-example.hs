@@ -12,7 +12,7 @@ import Control.Monad
 import Data.Bifunctor (first)
 import Data.Either (isRight)
 import Data.Foldable
-import Data.HashMap.Strict (fromList)
+import Data.HashMap.Strict (HashMap, fromList)
 import Data.Map (Map)
 import Data.Proxy (Proxy(..), asProxyTypeOf)
 import Data.Text (Text, chunksOf)
@@ -89,14 +89,14 @@ main :: IO ()
 main = hspec $ do
   for_ templates $ \(ReifiedTemplate pa path _) ->
     beforeAll (either error pure . eitherResult =<< parseFile ("example" </> path)) $ do
-      let mkObject = fromList . map (first Key.toText) . KeyMap.toList . toObject
       it (unwords [path, "compiles"]) $ \template ->
         -- If the templated compiled, we can try rendering it with synthetic data.
         -- The goal is to see if we can find any inputs which cause it to fail to
         -- render.
         property $ forAll arbitrary $ \a ->
-          eitherResult (renderWith filters template $ mkObject (a `asProxyTypeOf` pa))
+          eitherResult (renderWith filters template $ toEdeObject (a `asProxyTypeOf` pa))
             `shouldSatisfy` isRight
 
+filters :: HashMap Text Term
 filters = ["toChars" @: (chunksOf 1)]
 
