@@ -410,7 +410,6 @@ instance
   contentTemplatesFor _ pa =
     let fp = templateFor (Proxy @HTML) pa
      in M.insert fp (ReifiedTemplate (Proxy @a) fp ()) $ contentTemplatesFor (Proxy @contentTypes) pa
-    -- S.insert (templateFor (Proxy @HTML) pa) $ contentTemplatesFor (Proxy @contentTypes) pa
 
 instance
     {-# OVERLAPPING #-}
