@@ -487,7 +487,7 @@ processFile d (ReifiedTemplate p fp ())
   $ fmap
       ( either
           (NotOK . MM.singleton fp . S.singleton . show)
-          (OK . HM.singleton fp . ReifiedTemplate p (d </> fp))
+          (OK . HM.singleton fp . ReifiedTemplate p fp)
       . eitherResult
       )
   $ parseFile
