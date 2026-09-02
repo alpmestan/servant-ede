@@ -5,7 +5,6 @@
 {-# LANGUAGE OverloadedLists       #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeAbstractions      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -15,7 +14,7 @@ import Data.Either (isRight)
 import Data.Foldable
 import Data.HashMap.Strict (fromList)
 import Data.Map (Map)
-import Data.Proxy (Proxy(..))
+import Data.Proxy (Proxy(..), asProxyTypeOf)
 import Data.Text (Text, chunksOf)
 import GHC.Generics
 import Network.HTTP.Media ((//))
@@ -88,15 +87,15 @@ templates = reifyTemplates api
 
 main :: IO ()
 main = hspec $ do
-  for_ templates $ \(ReifiedTemplate @_ @a pa path _) ->
+  for_ templates $ \(ReifiedTemplate pa path _) ->
     beforeAll (either error pure . eitherResult =<< parseFile ("example" </> path)) $ do
       let mkObject = fromList . map (first Key.toText) . KeyMap.toList . toObject
       it (unwords [path, "compiles"]) $ \template ->
         -- If the templated compiled, we can try rendering it with synthetic data.
         -- The goal is to see if we can find any inputs which cause it to fail to
         -- render.
-        property $ forAll arbitrary $ \(a :: a) ->
-          eitherResult (renderWith filters template $ mkObject a)
+        property $ forAll arbitrary $ \a ->
+          eitherResult (renderWith filters template $ mkObject (a `asProxyTypeOf` pa))
             `shouldSatisfy` isRight
 
 filters = ["toChars" @: (chunksOf 1)]

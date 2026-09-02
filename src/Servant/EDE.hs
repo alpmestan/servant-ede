@@ -1,4 +1,10 @@
 {-# LANGUAGE CPP                        #-}
+#if __GLASGOW_HASKELL__ < 900
+{-# LANGUAGE AllowAmbiguousTypes        #-}
+#endif
+#if __GLASGOW_HASKELL__ < 904
+{-# LANGUAGE ConstraintKinds            #-}
+#endif
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -69,7 +75,11 @@ import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Set as S
 import Data.Set (Set)
 import Data.Traversable (for)
+#if __GLASGOW_HASKELL__ >= 904
 import GHC.Base (withDict)
+#else
+import Unsafe.Coerce (unsafeCoerce)
+#endif
 import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Aeson.Key as Key
 import Data.Aeson (Object, Value(..))
@@ -101,6 +111,19 @@ import qualified Data.Vector         as V
 -- @since 1.0.0.0
 class LoadedTemplates where
   loadedTemplates :: TemplatesAndFilters Trivial
+
+#if __GLASGOW_HASKELL__ < 904
+-- | Compatibility shim for @withDict@, which was only introduced in GHC 9.4.
+--
+-- This implements the standard single-method-class reflection trick: a class
+-- with a single method and no superclasses is represented at runtime exactly by
+-- that method's value, so we can reinterpret the method as the class dictionary.
+-- This is safe for 'LoadedTemplates', whose sole method is 'loadedTemplates'.
+newtype Gift c r = Gift (c => r)
+
+withDict :: forall c meth r. meth -> (c => r) -> r
+withDict meth k = unsafeCoerce (Gift k :: Gift c r) meth
+#endif
 
 -- @since 0.6
 type Filter = (Text,Term)
@@ -174,7 +197,7 @@ unsafeLoadTemplates
   -> m (Either (Map FilePath (Set String)) r)
 unsafeLoadTemplates proxy fpairs dir global k = do
   let flts = fromList fpairs
-  res <- liftIO $ loadTemplates' proxy dir
+  res <- liftIO $ loadTemplates' @Trivial proxy dir
   case res of
     Left errs  -> pure $ Left $ MM.getMonoidalMap errs
     Right tpls -> do
@@ -182,7 +205,8 @@ unsafeLoadTemplates proxy fpairs dir global k = do
 
 
 loadTemplates'
-    :: (TemplateFiles c api, c ())
+    :: forall c api
+     . (TemplateFiles c api, c ())
     => Proxy api
     -> FilePath
     -> IO (Either Errors (HashMap FilePath (ReifiedTemplate c Template)))
