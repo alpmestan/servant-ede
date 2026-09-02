@@ -64,7 +64,7 @@ executable servant-ede-example
     , servant-ede
     , text
     , unordered-containers
-    , warp
+    , warp >=3.2.25 && <3.5
 
 
 executable template-test-example
@@ -80,7 +80,7 @@ executable template-test-example
     , text
     , unordered-containers
     , containers
-    , QuickCheck
-    , hspec
+    , QuickCheck >= 2.13.2 && < 2.19
+    , hspec >= 2.6 && < 2.12
     , aeson
     , filepath
